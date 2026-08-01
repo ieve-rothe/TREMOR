@@ -104,7 +104,7 @@ module Scope
       server.bind_tcp(@host, @port)
       url = "http://127.0.0.1:#{@port}/?token=#{@token}"
 
-      puts "🌌 Scope Observability Server active!"
+      puts "🌌 TREMOR Observability Server active!"
       puts "Monitoring Directory: #{@dir}"
       puts "Access Dashboard:     #{url}"
       puts "Press Ctrl+C to stop."
