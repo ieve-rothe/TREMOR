@@ -14,6 +14,7 @@
       --accent-cyan: #38bdf8;
       --accent-amber: #fbbf24;
       --accent-green: #4ade80;
+      --accent-purple: #c084fc;
       --accent-rose: #f43f5e;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
       --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
@@ -32,7 +33,7 @@
     }
 
     header {
-      background: rgba(24, 31, 44, 0.8);
+      background: rgba(24, 31, 44, 0.85);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--panel-border);
       padding: 12px 24px;
@@ -134,13 +135,62 @@
       background: #0b0e14;
     }
 
+    .toolbar {
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(24, 31, 44, 0.5);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--panel-border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .filter-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-main);
+    }
+
+    .filter-btn.active {
+      background: var(--accent-cyan);
+      color: #000;
+      border-color: var(--accent-cyan);
+    }
+
+    .search-input {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      outline: none;
+      width: 220px;
+      transition: border-color 0.15s ease;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-cyan);
+    }
+
     .log-stream {
       flex: 1;
       overflow-y: auto;
       padding: 16px 24px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
     }
 
     .log-card {
@@ -152,7 +202,7 @@
       font-size: 0.85rem;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
       transition: border-color 0.2s ease;
     }
 
@@ -179,16 +229,60 @@
       color: var(--accent-amber);
     }
 
-    .log-content {
+    .message-bubble {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
-      line-height: 1.5;
-      color: #cbd5e1;
-      max-height: 300px;
-      overflow-y: auto;
-      background: rgba(0, 0, 0, 0.2);
-      padding: 10px;
+    }
+
+    .role-user {
+      background: rgba(192, 132, 252, 0.1);
+      border-left: 3px solid var(--accent-purple);
+    }
+
+    .role-assistant {
+      background: rgba(56, 189, 248, 0.1);
+      border-left: 3px solid var(--accent-cyan);
+    }
+
+    .role-system {
+      background: rgba(100, 116, 139, 0.1);
+      border-left: 3px solid var(--text-muted);
+      color: #94a3b8;
+      font-size: 0.78rem;
+    }
+
+    .role-tool {
+      background: rgba(251, 191, 36, 0.1);
+      border-left: 3px solid var(--accent-amber);
+    }
+
+    .thinking-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px dashed rgba(255, 255, 255, 0.15);
       border-radius: 6px;
+      padding: 10px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      font-style: italic;
+    }
+
+    .collapsible-header {
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .collapsible-header:hover {
+      color: var(--text-main);
     }
 
     .token-bar {
@@ -196,6 +290,8 @@
       color: var(--text-muted);
       display: flex;
       gap: 16px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
     }
   </style>
 </head>
@@ -204,15 +300,108 @@
 
   <script type="module">
     import { h, render } from 'https://esm.sh/preact@10.19.6';
-    import { useState, useEffect } from 'https://esm.sh/preact@10.19.6/hooks';
+    import { useState, useEffect, useMemo } from 'https://esm.sh/preact@10.19.6/hooks';
     import htm from 'https://esm.sh/htm@3.1.1';
 
     const html = htm.bind(h);
 
+    function LogCard({ log, viewMode }) {
+      const [showSystem, setShowSystem] = useState(false);
+      const [showThinking, setShowThinking] = useState(false);
+
+      // Extract user prompt messages vs system vs assistant
+      const promptMsgs = log.prompt || [];
+      const userMsgs = promptMsgs.filter(m => m.role === 'user');
+      const systemMsgs = promptMsgs.filter(m => m.role === 'system');
+      const toolMsgs = promptMsgs.filter(m => m.role === 'tool' || m.role === 'function');
+      
+      const botOutput = log.raw_output?.content || '';
+      const thinking = log.raw_output?.thinking || '';
+      const toolCalls = log.raw_output?.tool_calls || null;
+
+      // Filter rendering based on selected slice/viewMode
+      const renderUser = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'user';
+      const renderBot = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'bot';
+      const renderTools = viewMode === 'all' || viewMode === 'tools';
+
+      return html`
+        <div class="log-card">
+          <div class="log-header">
+            <span>Call ID: ${log.id ? log.id.slice(0, 8) : 'N/A'}</span>
+            <span class="log-model">${log.model || 'Unknown Model'}</span>
+            <span>${log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : ''}</span>
+            <span class="log-latency">${log.latency_ms ? log.latency_ms + 'ms' : ''}</span>
+          </div>
+
+          ${systemMsgs.length > 0 && html`
+            <div>
+              <div class="collapsible-header" onClick=${() => setShowSystem(!showSystem)}>
+                <span>⚙️ System Prompt (${systemMsgs.length} block${systemMsgs.length > 1 ? 's' : ''})</span>
+                <span>${showSystem ? '▼ Hide' : '▶ Expand'}</span>
+              </div>
+              ${showSystem && systemMsgs.map((m, idx) => html`
+                <div class="message-bubble role-system" key=${idx} style="margin-top:6px;">
+                  ${m.content}
+                </div>
+              `)}
+            </div>
+          `}
+
+          ${renderUser && userMsgs.map((m, idx) => html`
+            <div>
+              <div style="font-size:0.75rem; color:var(--accent-purple); font-weight:700; margin-bottom:4px;">👤 USER INPUT</div>
+              <div class="message-bubble role-user" key=${idx}>
+                ${m.content}
+              </div>
+            </div>
+          `)}
+
+          ${thinking && html`
+            <div>
+              <div class="collapsible-header" onClick=${() => setShowThinking(!showThinking)}>
+                <span>🧠 Model Reasoning / Thinking</span>
+                <span>${showThinking ? '▼ Hide' : '▶ Expand'}</span>
+              </div>
+              ${showThinking && html`
+                <div class="thinking-box" style="margin-top:6px;">
+                  ${thinking}
+                </div>
+              `}
+            </div>
+          `}
+
+          ${renderBot && botOutput && html`
+            <div>
+              <div style="font-size:0.75rem; color:var(--accent-cyan); font-weight:700; margin-bottom:4px;">🤖 BOT RESPONSE</div>
+              <div class="message-bubble role-assistant">
+                ${botOutput}
+              </div>
+            </div>
+          `}
+
+          ${renderTools && toolCalls && html`
+            <div>
+              <div style="font-size:0.75rem; color:var(--accent-amber); font-weight:700; margin-bottom:4px;">🛠️ TOOL CALLS</div>
+              <div class="message-bubble role-tool">
+                ${JSON.stringify(toolCalls, null, 2)}
+              </div>
+            </div>
+          `}
+
+          <div class="token-bar">
+            <span>Status: <strong style="color:${log.status === 'success' ? 'var(--accent-green)' : 'var(--accent-rose)'}">${log.status || 'unknown'}</strong></span>
+            ${log.sequence_id ? html`<span>Seq: ${log.sequence_id.slice(0, 8)}</span>` : null}
+            ${log.input_hash ? html`<span>Hash: ${log.input_hash.slice(0, 8)}</span>` : null}
+          </div>
+        </div>
+      `;
+    }
+
     function App() {
       const [logs, setLogs] = useState([]);
       const [status, setStatus] = useState('connecting');
-      const [bytesReceived, setBytesReceived] = useState(0);
+      const [viewMode, setViewMode] = useState('interleaved'); // 'interleaved', 'bot', 'user', 'tools'
+      const [searchQuery, setSearchQuery] = useState('');
 
       useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -220,38 +409,43 @@
 
         const eventSource = new EventSource(`/api/tail/llm_calls?token=${encodeURIComponent(token)}`);
 
-        eventSource.onopen = () => {
-          setStatus('connected');
-        };
+        eventSource.onopen = () => setStatus('connected');
 
         eventSource.onmessage = (e) => {
           try {
             const data = JSON.parse(e.data);
             setLogs(prev => [data, ...prev].slice(0, 100));
-            setBytesReceived(b => b + e.data.length);
           } catch (err) {
-            console.error("Failed to parse log line:", err, e.data);
+            console.error("Parse error:", err);
           }
         };
 
         eventSource.onerror = (err) => {
           setStatus('disconnected');
-          console.error("SSE Error:", err);
         };
 
         return () => eventSource.close();
       }, []);
+
+      const filteredLogs = useMemo(() => {
+        if (!searchQuery.trim()) return logs;
+        const q = searchQuery.toLowerCase();
+        return logs.filter(log => {
+          const contentStr = JSON.stringify(log).toLowerCase();
+          return contentStr.includes(q);
+        });
+      }, [logs, searchQuery]);
 
       return html`
         <div style="display:flex; flex-direction:column; height:100vh;">
           <header>
             <div class="brand">
               <span>MANTLE SCOPE</span>
-              <span class="brand-badge">MVP</span>
+              <span class="brand-badge">PROTOTYPE</span>
             </div>
             <div class="status-indicator">
               <div class="dot ${status}"></div>
-              <span>${status.toUpperCase()} (${logs.length} calls)</span>
+              <span>${status.toUpperCase()} (${filteredLogs.length} / ${logs.length} calls)</span>
             </div>
           </header>
           
@@ -262,41 +456,39 @@
                 <span style="font-size:0.75rem; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:10px;">${logs.length}</span>
               </div>
               <div class="nav-item">
-                <span>Topic Frames</span>
-                <span style="font-size:0.75rem; color:var(--text-muted)">Phase 2</span>
+                <span>Beads Thread View</span>
+                <span style="font-size:0.75rem; color:var(--text-muted)">Phase 3</span>
               </div>
               <div class="nav-item">
-                <span>Memory Layers</span>
+                <span>Topic Frames</span>
                 <span style="font-size:0.75rem; color:var(--text-muted)">Phase 2</span>
               </div>
             </div>
 
             <div class="content-area">
+              <div class="toolbar">
+                <span style="font-size:0.8rem; color:var(--text-muted); font-weight:600;">Slices:</span>
+                <button class="filter-btn ${viewMode === 'interleaved' ? 'active' : ''}" onClick=${() => setViewMode('interleaved')}>Interleaved (Both)</button>
+                <button class="filter-btn ${viewMode === 'bot' ? 'active' : ''}" onClick=${() => setViewMode('bot')}>Bot Responses</button>
+                <button class="filter-btn ${viewMode === 'user' ? 'active' : ''}" onClick=${() => setViewMode('user')}>User Inputs</button>
+                <button class="filter-btn ${viewMode === 'tools' ? 'active' : ''}" onClick=${() => setViewMode('tools')}>Tool Calls</button>
+                
+                <input 
+                  type="text" 
+                  class="search-input" 
+                  placeholder="Filter logs by keyword..." 
+                  value=${searchQuery} 
+                  onInput=${e => setSearchQuery(e.target.value)} 
+                />
+              </div>
+
               <div class="log-stream">
-                ${logs.length === 0 ? html`
+                ${filteredLogs.length === 0 ? html`
                   <div style="text-align:center; padding:40px; color:var(--text-muted)">
-                    Waiting for incoming LLM calls from <code>llm_calls.jsonl</code>...
+                    No log records matching filter...
                   </div>
-                ` : logs.map((log, idx) => html`
-                  <div class="log-card" key=${log.id || idx}>
-                    <div class="log-header">
-                      <span>ID: ${log.id ? log.id.slice(0, 8) : 'N/A'}</span>
-                      <span class="log-model">${log.model || 'Unknown Model'}</span>
-                      <span>${log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : ''}</span>
-                      <span class="log-latency">${log.latency_ms ? log.latency_ms + 'ms' : ''}</span>
-                    </div>
-
-                    <div class="log-content">
-                      ${log.raw_output && log.raw_output.content 
-                        ? log.raw_output.content 
-                        : (log.prompt && log.prompt.length > 0 ? log.prompt[log.prompt.length - 1].content : JSON.stringify(log, null, 2))}
-                    </div>
-
-                    <div class="token-bar">
-                      <span>Status: <strong style="color:${log.status === 'success' ? 'var(--accent-green)' : 'var(--accent-rose)'}">${log.status || 'unknown'}</strong></span>
-                      ${log.sequence_id ? html`<span>Seq: ${log.sequence_id.slice(0, 8)}</span>` : null}
-                    </div>
-                  </div>
+                ` : filteredLogs.map((log, idx) => html`
+                  <${LogCard} key=${log.id || idx} log=${log} viewMode=${viewMode} />
                 `)}
               </div>
             </div>
