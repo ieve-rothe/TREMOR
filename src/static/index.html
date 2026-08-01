@@ -501,18 +501,25 @@
       const systemText = systemMsgs.map(m => m.content).join("\n\n");
       const systemTokens = estimateTokens(systemText);
 
-      // Separate tool result return messages from human user inputs & assistant history
-      const toolResultMsgs = promptMsgs.filter(m => m.role === 'tool');
-      const conversationMsgs = promptMsgs.filter(m => m.role === 'user' || m.role === 'assistant');
+      // Include tool messages in the conversation flow — they're part of the history
+      const conversationMsgs = promptMsgs.filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool');
 
       const userMsgs = conversationMsgs.filter(m => m.role === 'user');
       const latestUserMsg = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1] : null;
 
-      // History contains all conversationMsgs prior to latestUserMsg
+      // Find the index of the latest user message in the full conversation flow
       const latestUserIdx = latestUserMsg ? conversationMsgs.lastIndexOf(latestUserMsg) : -1;
+
+      // History = everything before the latest user message (including old tool results)
       const historyMsgs = latestUserIdx > 0 ? conversationMsgs.slice(0, latestUserIdx) : (latestUserMsg ? [] : conversationMsgs);
       const historyText = historyMsgs.map(m => m.content).join("\n\n");
       const historyTokens = estimateTokens(historyText);
+
+      // Active tool results = only tool messages AFTER the latest user message
+      // These are the tool results feeding directly into THIS specific LLM call
+      const activeToolMsgs = latestUserIdx >= 0
+        ? conversationMsgs.slice(latestUserIdx + 1).filter(m => m.role === 'tool')
+        : promptMsgs.filter(m => m.role === 'tool');
 
       const botOutput = log.raw_output?.content || '';
       const thinking = log.raw_output?.thinking || '';
@@ -568,9 +575,9 @@
               ${showHistory && historyMsgs.map((m, idx) => html`
                 <div key=${idx} style="margin-top:8px;">
                   <div style="font-size:0.72rem; color:var(--text-muted); font-weight:700; margin-bottom:4px; text-transform:uppercase;">
-                    ${m.role === 'user' ? '👤 USER' : m.role === 'assistant' ? '🤖 ASSISTANT' : m.role} (~${estimateTokens(m.content)} tokens)
+                    ${m.role === 'user' ? '👤 USER' : m.role === 'assistant' ? '🤖 ASSISTANT' : m.role === 'tool' ? '🔧 TOOL RESULT' : m.role} (~${estimateTokens(m.content)} tokens)
                   </div>
-                  <div class="message-bubble ${m.role === 'user' ? 'role-user' : 'role-assistant'}">
+                  <div class="message-bubble ${m.role === 'user' ? 'role-user' : m.role === 'tool' ? 'role-tool' : 'role-assistant'}">
                     ${m.content}
                   </div>
                 </div>
@@ -578,8 +585,8 @@
             </div>
           `}
 
-          ${renderTools && toolResultMsgs.length > 0 && html`
-            ${toolResultMsgs.map((m, idx) => html`
+          ${renderTools && activeToolMsgs.length > 0 && html`
+            ${activeToolMsgs.map((m, idx) => html`
               <div key=${idx}>
                 <div style="font-size:0.75rem; color:var(--accent-amber); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">
                   🔧 TOOL RESULT RETURNED ${m.tool_call_id ? `(ID: ${m.tool_call_id})` : ''} (~${estimateTokens(m.content)} tokens)
