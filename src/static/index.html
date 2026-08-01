@@ -140,6 +140,7 @@
       display: flex;
       flex-direction: column;
       gap: 20px;
+      overflow-y: auto;
     }
 
     .sidebar-section-title {
@@ -184,6 +185,12 @@
       border-color: var(--accent-cyan);
     }
 
+    .filter-btn.active-error {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--accent-rose);
+      border-color: var(--accent-rose);
+    }
+
     .search-input {
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--panel-border);
@@ -198,6 +205,13 @@
 
     .search-input:focus {
       border-color: var(--accent-cyan);
+    }
+
+    .search-hint {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
     }
 
     .content-area {
@@ -291,6 +305,16 @@
       color: #fef08a;
     }
 
+    .error-banner {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid var(--accent-rose);
+      color: #fecdd3;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.83rem;
+      font-weight: 600;
+    }
+
     .thinking-box {
       background: rgba(0, 0, 0, 0.4);
       border: 1px dashed rgba(255, 255, 255, 0.2);
@@ -352,7 +376,6 @@
 
     const html = htm.bind(h);
 
-    // Heuristic: ~4 characters = 1 token
     function estimateTokens(text) {
       if (!text) return 0;
       return Math.ceil(text.length / 4);
@@ -384,6 +407,7 @@
       const thinking = log.raw_output?.thinking || '';
       const thinkingTokens = estimateTokens(thinking);
       const toolCalls = log.raw_output?.tool_calls || null;
+      const errorMessage = log.error_message || null;
 
       const renderUser = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'user';
       const renderBot = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'bot';
@@ -397,6 +421,12 @@
             <span>📅 ${formatDate(log.timestamp)}</span>
             <span class="log-latency">⚡ ${log.latency_ms ? log.latency_ms + 'ms' : ''}</span>
           </div>
+
+          ${errorMessage && html`
+            <div class="error-banner">
+              ⚠️ <strong>Error:</strong> ${errorMessage}
+            </div>
+          `}
 
           ${systemMsgs.length > 0 && html`
             <div>
@@ -471,8 +501,9 @@
     function App() {
       const [logs, setLogs] = useState([]);
       const [status, setStatus] = useState('connecting');
-      const [activeTab, setActiveTab] = useState('ongoing'); // 'ongoing', 'beads', 'frames', 'memory', 'demons'
+      const [activeTab, setActiveTab] = useState('ongoing');
       const [viewMode, setViewMode] = useState('interleaved'); // 'interleaved', 'bot', 'user', 'tools'
+      const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'success', 'error'
       const [searchQuery, setSearchQuery] = useState('');
       const [maxRecords, setMaxRecords] = useState(250);
 
@@ -501,13 +532,29 @@
       }, [maxRecords]);
 
       const filteredLogs = useMemo(() => {
-        if (!searchQuery.trim()) return logs;
-        const q = searchQuery.toLowerCase();
         return logs.filter(log => {
-          const contentStr = JSON.stringify(log).toLowerCase();
-          return contentStr.includes(q);
+          // Status filter
+          if (statusFilter === 'error' && log.status !== 'error' && !log.error_message) return false;
+          if (statusFilter === 'success' && log.status !== 'success') return false;
+
+          // Text search query
+          if (!searchQuery.trim()) return true;
+          const q = searchQuery.toLowerCase();
+
+          // Explicit field matching
+          const modelMatch = (log.model || '').toLowerCase().includes(q);
+          const statusMatch = (log.status || '').toLowerCase().includes(q);
+          const seqMatch = (log.sequence_id || '').toLowerCase().includes(q);
+          const idMatch = (log.id || '').toLowerCase().includes(q);
+          const errorMatch = (log.error_message || '').toLowerCase().includes(q);
+          
+          const promptMatch = (log.prompt || []).some(m => (m.content || '').toLowerCase().includes(q));
+          const responseMatch = (log.raw_output?.content || '').toLowerCase().includes(q);
+          const thinkingMatch = (log.raw_output?.thinking || '').toLowerCase().includes(q);
+
+          return modelMatch || statusMatch || seqMatch || idMatch || errorMatch || promptMatch || responseMatch || thinkingMatch;
         });
-      }, [logs, searchQuery]);
+      }, [logs, searchQuery, statusFilter]);
 
       return html`
         <div style="display:flex; flex-direction:column; height:100vh;">
@@ -534,7 +581,7 @@
 
             <div class="status-indicator">
               <div class="dot ${status}"></div>
-              <span>${status.toUpperCase()} (${filteredLogs.length} calls)</span>
+              <span>${status.toUpperCase()} (${filteredLogs.length} / ${logs.length} calls)</span>
             </div>
           </header>
           
@@ -559,14 +606,32 @@
               </div>
 
               <div>
+                <div class="sidebar-section-title">Execution Status</div>
+                <div class="filter-group">
+                  <button class="filter-btn ${statusFilter === 'all' ? 'active' : ''}" onClick=${() => setStatusFilter('all')}>
+                    <span>All Statuses</span>
+                  </button>
+                  <button class="filter-btn ${statusFilter === 'success' ? 'active' : ''}" onClick=${() => setStatusFilter('success')}>
+                    <span>Success Only</span>
+                  </button>
+                  <button class="filter-btn ${statusFilter === 'error' ? 'active-error' : ''}" onClick=${() => setStatusFilter('error')}>
+                    <span>Errors Only</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
                 <div class="sidebar-section-title">Search Filter</div>
                 <input 
                   type="text" 
                   class="search-input" 
-                  placeholder="Filter logs..." 
+                  placeholder="Filter text, model, ID..." 
                   value=${searchQuery} 
                   onInput=${e => setSearchQuery(e.target.value)} 
                 />
+                <div class="search-hint">
+                  Searches prompt text, model output, reasoning, sequence IDs, model names, and error messages.
+                </div>
               </div>
 
               <div>
@@ -588,7 +653,12 @@
               <div class="log-stream">
                 ${filteredLogs.length === 0 ? html`
                   <div style="text-align:center; padding:60px; color:var(--text-muted)">
-                    No log records matching criteria...
+                    <div style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:8px;">No matching records found</div>
+                    <div style="font-size:0.85rem; max-width:400px; margin:0 auto; line-height:1.5;">
+                      No logs matched your active filters 
+                      ${searchQuery ? html` for query <code style="color:var(--accent-cyan)">"${searchQuery}"</code>` : ''} 
+                      ${statusFilter !== 'all' ? html` with status <code style="color:var(--accent-amber)">"${statusFilter}"</code>` : ''}.
+                    </div>
                   </div>
                 ` : filteredLogs.map((log, idx) => html`
                   <${LogCard} key=${log.id || idx} log=${log} viewMode=${viewMode} />
