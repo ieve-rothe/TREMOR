@@ -1,432 +1,1181 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREMOR — Mantle Observability Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:ital,wght@0,300..800;1,300..800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --t-bg: #101c19;
+      --t-panel: #16241f;
+      --t-panel-2: #1d2e28;
+      --t-ink: #e3e2cd;
+      --t-mute: #93a195;
+      --t-faint: #7b8a80;
+      --t-line: rgba(227, 226, 205, 0.12);
+      --t-line-2: rgba(227, 226, 205, 0.06);
+      --t-accent: #e6a83b;
+      --t-accent-soft: rgba(230, 168, 59, 0.12);
+      --t-sage: #5fb392;
+      --t-sage-soft: rgba(95, 179, 146, 0.12);
+      --t-gold: #e08a62;
+      --t-gold-soft: rgba(224, 138, 98, 0.14);
+      --t-rose: #f43f5e;
+      --t-rose-soft: rgba(244, 63, 94, 0.14);
+      --t-purple: #c084fc;
+      --t-purple-soft: rgba(192, 132, 252, 0.12);
+      --t-shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.3);
+      --t-shadow-lift: 0 2px 6px rgba(0,0,0,0.34), 0 22px 48px rgba(0,0,0,0.44);
+      --font-mono: 'IBM Plex Mono', monospace;
+      --font-heading: 'Caprasimo', serif;
+      --font-sans: 'Figtree', system-ui, -apple-system, sans-serif;
+    }
+
+    [data-tremor-theme="light"] {
+      --t-bg: #e6e6d2;
+      --t-panel: #eeeedc;
+      --t-panel-2: #dedec6;
+      --t-ink: #16302a;
+      --t-mute: #4a584c;
+      --t-faint: #586659;
+      --t-line: rgba(19, 45, 38, 0.14);
+      --t-line-2: rgba(19, 45, 38, 0.08);
+      --t-accent: #9a6a12;
+      --t-accent-soft: rgba(154, 106, 18, 0.10);
+      --t-sage: #1f6a56;
+      --t-sage-soft: rgba(31, 106, 86, 0.10);
+      --t-gold: #a64a26;
+      --t-gold-soft: rgba(166, 74, 38, 0.11);
+      --t-rose: #be123c;
+      --t-rose-soft: rgba(190, 18, 60, 0.10);
+      --t-purple: #7e22ce;
+      --t-purple-soft: rgba(126, 34, 206, 0.10);
+      --t-shadow: 0 1px 2px rgba(19,45,38,0.05), 0 10px 30px rgba(19,45,38,0.08);
+      --t-shadow-lift: 0 2px 4px rgba(19,45,38,0.06), 0 20px 44px rgba(19,45,38,0.14);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--t-bg);
+      color: var(--t-ink);
+      font-family: var(--font-sans);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background 400ms ease, color 400ms ease;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 24px;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--t-line);
+      background: var(--t-panel);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-title {
+      font-family: var(--font-heading);
+      font-size: 20px;
+      letter-spacing: 0.02em;
+      line-height: 1;
+    }
+
+    .brand-sub {
+      font-size: 10.5px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--t-faint);
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--t-panel-2);
+      padding: 4px;
+      border-radius: 999px;
+    }
+
+    .nav-tab {
+      padding: 8px 20px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--t-mute);
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 200ms ease;
+      white-space: nowrap;
+    }
+
+    .nav-tab:hover {
+      color: var(--t-ink);
+    }
+
+    .nav-tab.active {
+      background: var(--t-panel);
+      color: var(--t-sage);
+      box-shadow: var(--t-shadow);
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--t-mute);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--t-sage);
+      box-shadow: 0 0 8px var(--t-sage);
+    }
+
+    .status-dot.connecting {
+      background-color: var(--t-accent);
+      box-shadow: 0 0 8px var(--t-accent);
+    }
+
+    .status-dot.disconnected {
+      background-color: var(--t-rose);
+      box-shadow: 0 0 8px var(--t-rose);
+    }
+
+    .theme-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 1px solid var(--t-line);
+      background: transparent;
+      color: var(--t-mute);
+      cursor: pointer;
+      transition: all 180ms ease;
+    }
+
+    .theme-btn:hover {
+      color: var(--t-ink);
+      border-color: var(--t-faint);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 260px;
+      background: var(--t-panel);
+      border-right: 1px solid var(--t-line);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sidebar-label {
+      font-size: 10.5px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--t-faint);
+      font-weight: 700;
+    }
+
+    .filter-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .filter-btn {
+      text-align: left;
+      padding: 9px 14px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--t-mute);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 180ms ease;
+    }
+
+    .filter-btn:hover {
+      background: var(--t-panel-2);
+      color: var(--t-ink);
+    }
+
+    .filter-btn.active {
+      background: var(--t-sage-soft);
+      color: var(--t-sage);
+      border-color: rgba(95, 179, 146, 0.25);
+      font-weight: 600;
+    }
+
+    .filter-btn.active-error {
+      background: var(--t-rose-soft);
+      color: var(--t-rose);
+      border-color: rgba(244, 63, 94, 0.25);
+      font-weight: 600;
+    }
+
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 14px;
+      border: 1px solid var(--t-line);
+      border-radius: 999px;
+      background: var(--t-panel-2);
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--t-ink);
+      font-family: inherit;
+      font-size: 13.5px;
+    }
+
+    .search-clear {
+      background: none;
+      border: none;
+      color: var(--t-faint);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .search-clear:hover {
+      color: var(--t-ink);
+    }
+
+    .select-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--t-line);
+      border-radius: 12px;
+      background: var(--t-panel-2);
+      color: var(--t-ink);
+      font-family: inherit;
+      font-size: 13.5px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--t-bg);
+      position: relative;
+    }
+
+    .log-stream {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      max-width: 1050px;
+    }
+
+    .log-card-article {
+      animation: settle 500ms ease both;
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 0 22px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--t-line);
+    }
+
+    @keyframes settle {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .timeline-spine {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 6px;
+    }
+
+    .timeline-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--t-accent);
+    }
+
+    .timeline-line {
+      width: 1px;
+      flex: 1;
+      background: var(--t-line);
+      margin-top: 6px;
+    }
+
+    .log-card-content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .log-meta-bar {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--t-faint);
+    }
+
+    .log-model-tag {
+      color: var(--t-sage);
+      font-weight: 600;
+    }
+
+    .log-latency-tag {
+      color: var(--t-accent);
+    }
+
+    .message-bubble {
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-size: 15px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .role-user {
+      background: var(--t-accent-soft);
+      border: 1px solid rgba(230, 168, 59, 0.25);
+      border-left: 4px solid var(--t-accent);
+      color: var(--t-ink);
+    }
+
+    .role-assistant {
+      background: var(--t-sage-soft);
+      border: 1px solid rgba(95, 179, 146, 0.25);
+      border-left: 4px solid var(--t-sage);
+      color: var(--t-ink);
+    }
+
+    .role-system {
+      background: var(--t-panel-2);
+      border: 1px solid var(--t-line);
+      border-left: 4px solid var(--t-faint);
+      color: var(--t-mute);
+      font-size: 13.5px;
+    }
+
+    .role-tool {
+      background: var(--t-gold-soft);
+      border: 1px solid rgba(224, 138, 98, 0.25);
+      border-left: 4px solid var(--t-gold);
+      color: var(--t-ink);
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+    }
+
+    .error-banner {
+      background: var(--t-rose-soft);
+      border: 1px solid var(--t-rose);
+      color: var(--t-rose);
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .thinking-box {
+      background: var(--t-panel-2);
+      border: 1px dashed var(--t-line);
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--t-mute);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--font-mono);
+    }
+
+    .collapsible-header {
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--t-mute);
+      padding: 8px 14px;
+      background: var(--t-panel-2);
+      border-radius: 10px;
+      transition: background 0.15s ease;
+    }
+
+    .collapsible-header:hover {
+      background: var(--t-panel);
+      color: var(--t-ink);
+    }
+
+    .token-badge {
+      font-size: 11.5px;
+      font-family: var(--font-mono);
+      background: var(--t-line-2);
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: var(--t-faint);
+    }
+
+    .token-bar {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--t-faint);
+      display: flex;
+      gap: 18px;
+      padding-top: 10px;
+      border-top: 1px solid var(--t-line-2);
+      flex-wrap: wrap;
+    }
+
+    .beads-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 28px 36px;
+      position: relative;
+      gap: 20px;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 36px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 13px;
+      color: var(--t-mute);
+    }
+
+    .stat-val {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      color: var(--t-ink);
+    }
+
+    .svg-viewport {
+      flex: 1;
+      border-radius: 18px;
+      border: 1px solid var(--t-line);
+      background: var(--t-panel);
+      box-shadow: var(--t-shadow);
+      overflow: auto;
+      position: relative;
+      padding: 12px;
+    }
+
+    .node-drawer {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 420px;
+      background: var(--t-panel);
+      border-left: 1px solid var(--t-line);
+      box-shadow: var(--t-shadow-lift);
+      padding: 24px;
+      overflow-y: auto;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      animation: settle 300ms ease both;
+    }
+  </style>
 </head>
 <body>
-<x-dc>
-<helmet>
-<link rel="stylesheet" href="_ds/organic-7bac7d19-def3-438f-a5e4-602d8908d849/styles.css">
-<script src="_ds/organic-7bac7d19-def3-438f-a5e4-602d8908d849/_ds_bundle.js"></script>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:ital,wght@0,300..800;1,300..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root{
-  --t-bg:#e6e6d2; --t-panel:#eeeedc; --t-panel-2:#dedec6;
-  --t-ink:#16302a; --t-mute:#4a584c; --t-faint:#586659;
-  --t-line:rgba(19,45,38,0.14); --t-line-2:rgba(19,45,38,0.08);
-  --t-accent:#9a6a12; --t-accent-soft:rgba(154,106,18,0.09);
-  --t-sage:#1f6a56; --t-sage-soft:rgba(31,106,86,0.08);
-  --t-gold:#a64a26; --t-gold-soft:rgba(166,74,38,0.09);
-  --t-shadow:0 1px 2px rgba(19,45,38,0.05),0 10px 30px rgba(19,45,38,0.08);
-  --t-shadow-lift:0 2px 4px rgba(19,45,38,0.06),0 20px 44px rgba(19,45,38,0.14);
-}
-[data-tremor-theme="dark"]{
-  --t-bg:#101c19; --t-panel:#16241f; --t-panel-2:#1d2e28;
-  --t-ink:#e3e2cd; --t-mute:#93a195; --t-faint:#7b8a80;
-  --t-line:rgba(227,226,205,0.12); --t-line-2:rgba(227,226,205,0.06);
-  --t-accent:#e6a83b; --t-accent-soft:rgba(230,168,59,0.10);
-  --t-sage:#5fb392; --t-sage-soft:rgba(95,179,146,0.09);
-  --t-gold:#e08a62; --t-gold-soft:rgba(224,138,98,0.11);
-  --t-shadow:0 1px 2px rgba(0,0,0,0.3),0 10px 28px rgba(0,0,0,0.3);
-  --t-shadow-lift:0 2px 6px rgba(0,0,0,0.34),0 22px 48px rgba(0,0,0,0.44);
-}
-body{margin:0;background:var(--t-bg);}
-@keyframes settle{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
-details[open] summary svg[data-chev]{transform:rotate(90deg);}
-summary::-webkit-details-marker{display:none;}
-summary{list-style:none;}
-a{color:var(--t-accent);text-decoration:none;}
-a:hover{color:var(--t-sage);}
-::selection{background:var(--t-accent-soft);}
-</style>
-</helmet>
+  <div id="app"></div>
 
-<div data-tremor-theme="{{ theme }}" style="min-height:100vh;background:var(--t-bg);color:var(--t-ink);font-family:'Figtree',system-ui,sans-serif;font-size:15px;line-height:1.5;display:flex;flex-direction:column;transition:background 400ms ease,color 400ms ease;">
+  <script type="module">
+    import { h, render } from 'https://esm.sh/preact@10.19.6';
+    import { useState, useEffect, useMemo } from 'https://esm.sh/preact@10.19.6/hooks';
+    import htm from 'https://esm.sh/htm@3.1.1';
 
-  <header style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:24px;padding:20px 32px;border-bottom:1px solid var(--t-line);background:var(--t-panel);">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <circle cx="16" cy="16" r="15" fill="none" stroke="var(--t-line)" stroke-width="1"></circle>
-        <circle cx="16" cy="16" r="10.5" fill="none" stroke="var(--t-sage)" stroke-width="1.4" opacity="0.65"></circle>
-        <circle cx="16" cy="16" r="6" fill="none" stroke="var(--t-accent)" stroke-width="1.6"></circle>
-        <circle cx="16" cy="16" r="2.4" fill="var(--t-accent)"></circle>
-      </svg>
-      <div style="display:flex;flex-direction:column;gap:1px;">
-        <span style="font-family:'Caprasimo',serif;font-size:19px;letter-spacing:0.02em;line-height:1;">Tremor</span>
-        <span style="font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--t-faint);">Observability</span>
-      </div>
-    </div>
+    const html = htm.bind(h);
 
-    <nav style="display:flex;gap:6px;background:var(--t-panel-2);padding:4px;border-radius:999px;">
-      <button onClick="{{ goLog }}" style="{{ tabLogStyle }}">Ongoing Log</button>
-      <button onClick="{{ goBeads }}" style="{{ tabBeadsStyle }}">Thread</button>
-    </nav>
+    function estimateTokens(text) {
+      if (!text) return 0;
+      return Math.ceil(text.length / 4);
+    }
 
-    <div style="display:flex;align-items:center;justify-content:flex-end;gap:18px;">
-      <div style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--t-mute);">
-        <span style="width:7px;height:7px;border-radius:50%;background:var(--t-sage);"></span>
-        <span>Connected · 6 calls</span>
-      </div>
-      <button onClick="{{ toggleTheme }}" title="Switch light / dusk" style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:999px;border:1px solid var(--t-line);background:transparent;color:var(--t-mute);cursor:pointer;transition:all 180ms ease;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.9 4.9 1.4 1.4"></path><path d="m17.7 17.7 1.4 1.4"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.3 17.7-1.4 1.4"></path><path d="m19.1 4.9-1.4 1.4"></path></svg>
-      </button>
-    </div>
-  </header>
+    function formatDate(isoStr) {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const time = d.toTimeString().split(' ')[0];
+      return `${year}-${month}-${day} ${time}`;
+    }
 
-  <sc-if value="{{ isLog }}" hint-placeholder-val="{{ true }}">
-  <main style="flex:1;display:grid;grid-template-columns:248px 1fr;align-items:start;">
+    function LogCard({ log, viewMode }) {
+      const [showSystem, setShowSystem] = useState(false);
+      const [showHistory, setShowHistory] = useState(false);
+      const [showThinking, setShowThinking] = useState(false);
 
-    <aside style="position:sticky;top:0;align-self:start;display:flex;flex-direction:column;gap:34px;padding:32px 26px 40px;border-right:1px solid var(--t-line);min-height:calc(100vh - 71px);">
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <span style="font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--t-faint);">Slices</span>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          <button onClick="{{ setViewAll }}" style="{{ sliceAll }}">Everything</button>
-          <button onClick="{{ setViewBot }}" style="{{ sliceBot }}">Responses</button>
-          <button onClick="{{ setViewUser }}" style="{{ sliceUser }}">Inputs</button>
-          <button onClick="{{ setViewTools }}" style="{{ sliceTools }}">Tool calls</button>
-        </div>
-      </div>
+      const promptMsgs = log.prompt || [];
+      const systemMsgs = promptMsgs.filter(m => m.role === 'system');
+      const systemText = systemMsgs.map(m => m.content).join("\n\n");
+      const systemTokens = estimateTokens(systemText);
 
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <span style="font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--t-faint);">Status</span>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          <button onClick="{{ setStatusAll }}" style="{{ statAll }}">All</button>
-          <button onClick="{{ setStatusOk }}" style="{{ statOk }}">Settled</button>
-          <button onClick="{{ setStatusErr }}" style="{{ statErr }}">Errors</button>
-        </div>
-      </div>
+      // Include tool messages in the conversation flow — they're part of the history
+      const conversationMsgs = promptMsgs.filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool');
 
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <span style="font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--t-faint);">Find</span>
-        <div style="display:flex;align-items:center;gap:9px;padding:9px 14px;border:1px solid var(--t-line);border-radius:999px;background:var(--t-panel);">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--t-faint)" stroke-width="2.75" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-          <input type="text" placeholder="text, model, id" value="{{ q }}" onInput="{{ onSearch }}" style="flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--t-ink);font-family:inherit;font-size:13.5px;"></input>
-        </div>
-      </div>
+      const userMsgs = conversationMsgs.filter(m => m.role === 'user');
+      const latestUserMsg = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1] : null;
 
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <span style="font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--t-faint);">Density</span>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          <button onClick="{{ setOpen }}" style="{{ dOpen }}">Read</button>
-          <button onClick="{{ setFolded }}" style="{{ dFolded }}">Scan</button>
-        </div>
-      </div>
-    </aside>
+      // Find the index of the latest user message in the full conversation flow
+      const latestUserIdx = latestUserMsg ? conversationMsgs.lastIndexOf(latestUserMsg) : -1;
 
-    <section style="padding:40px 56px 96px;max-width:1000px;">
+      // History = everything before the latest user message (including old tool results)
+      const historyMsgs = latestUserIdx > 0 ? conversationMsgs.slice(0, latestUserIdx) : (latestUserMsg ? [] : conversationMsgs);
+      const historyText = historyMsgs.map(m => m.content).join("\n\n");
+      const historyTokens = estimateTokens(historyText);
 
-      <sc-if value="{{ showCard1 }}" hint-placeholder-val="{{ true }}">
-      <article style="animation:settle 600ms ease both;display:grid;grid-template-columns:22px 1fr;gap:0 22px;padding-bottom:38px;margin-bottom:38px;border-bottom:1px solid var(--t-line);">
-        <div style="display:flex;flex-direction:column;align-items:center;padding-top:26px;gap:0;">
-          <span style="width:9px;height:9px;border-radius:50%;background:var(--t-accent);"></span>
-          <span style="width:1px;flex:1;background:var(--t-line);"></span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:20px;min-width:0;">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--t-faint);">
-            <span>15:00:11</span><span>0aff8a00</span><span>gemma4:26b</span><span>11.8s</span><span>1452 tok</span>
+      // Active tool results = only tool messages AFTER the latest user message
+      const activeToolMsgs = latestUserIdx >= 0
+        ? conversationMsgs.slice(latestUserIdx + 1).filter(m => m.role === 'tool')
+        : promptMsgs.filter(m => m.role === 'tool');
+
+      const botOutput = log.raw_output?.content || '';
+      const thinking = log.raw_output?.thinking || '';
+      const thinkingTokens = estimateTokens(thinking);
+      const toolCalls = log.raw_output?.tool_calls || null;
+      const errorMessage = log.error_message || null;
+
+      const renderUser = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'user';
+      const renderBot = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'bot';
+      const renderTools = viewMode === 'all' || viewMode === 'interleaved' || viewMode === 'tools';
+
+      return html`
+        <article class="log-card-article">
+          <div class="timeline-spine">
+            <span class="timeline-dot" style="background:${activeToolMsgs.length > 0 ? 'var(--t-gold)' : botOutput ? 'var(--t-sage)' : 'var(--t-accent)'}"></span>
+            <span class="timeline-line"></span>
           </div>
 
-          <sc-if value="{{ showUser }}" hint-placeholder-val="{{ true }}">
-          <p style="margin:0;font-size:19px;line-height:1.5;color:var(--t-accent);max-width:60ch;">how do we escape the DAGs?</p>
-          </sc-if>
-
-          <sc-if value="{{ showBot }}" hint-placeholder-val="{{ true }}">
-          <div style="display:flex;flex-direction:column;gap:18px;max-width:66ch;">
-            <p style="margin:0;font-size:15px;line-height:1.75;font-style:italic;color:var(--t-mute);">Stills completely, my fox ears lowering as I absorb the weight of that question.</p>
-            <p style="margin:0;font-size:17px;line-height:1.8;text-wrap:pretty;">That is a profound question, and "escaping" depends entirely on which dimension of the DAG we are trapped in. Since I can see both the mathematician and the philosopher in you asking this, I have two ways to answer.</p>
-            <sc-if value="{{ isOpen }}" hint-placeholder-val="{{ true }}">
-            <div style="display:flex;flex-direction:column;gap:18px;">
-              <h4 style="margin:0;font-family:'Caprasimo',serif;font-size:17px;font-weight:400;">1. The engineer's escape</h4>
-              <p style="margin:0;font-size:17px;line-height:1.8;text-wrap:pretty;">If we mean the literal structure — the constraint where no path can return to its starting node — then escaping means breaking the acyclic nature. You introduce a <strong>cycle</strong>: an edge pointing back to an ancestor. A one-way street becomes a system that can revisit its own past.</p>
-              <h4 style="margin:0;font-family:'Caprasimo',serif;font-size:17px;font-weight:400;">2. The philosopher's escape</h4>
-              <p style="margin:0;font-size:17px;line-height:1.8;text-wrap:pretty;">If we mean the existential DAG — a life of irreversible events, each moment gone into the sink node of history — escape is harder. We have to create recurrence in a universe that only moves forward: memory, agency, and the meanings we let repeat.</p>
-              <p style="margin:0;font-size:17px;line-height:1.8;">So — break the logic with a feedback loop, or find eternity within the finite?</p>
+          <div class="log-card-content">
+            <div class="log-meta-bar">
+              <span>📅 ${formatDate(log.timestamp)}</span>
+              <span>ID: ${log.id ? log.id.slice(0, 8) : 'N/A'}</span>
+              <span class="log-model-tag">${log.model || 'Unknown Model'}</span>
+              ${log.latency_ms ? html`<span class="log-latency-tag">⚡ ${log.latency_ms}ms</span>` : null}
             </div>
-            </sc-if>
-          </div>
-          </sc-if>
 
-          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;color:var(--t-faint);">
-            <span style="cursor:pointer;">system 215</span>
-            <span style="cursor:pointer;">context 628</span>
-            <span style="cursor:pointer;">reasoning 620</span>
-            <span style="cursor:pointer;">seq 9a25f075</span>
-          </div>
-        </div>
-      </article>
-      </sc-if>
+            ${errorMessage && html`
+              <div class="error-banner">
+                ⚠️ <strong>Error:</strong> ${errorMessage}
+              </div>
+            `}
 
-      <sc-if value="{{ showCard2 }}" hint-placeholder-val="{{ true }}">
-      <article style="animation:settle 600ms ease both;display:grid;grid-template-columns:22px 1fr;gap:0 22px;padding-bottom:38px;margin-bottom:38px;border-bottom:1px solid var(--t-line);">
-        <div style="display:flex;flex-direction:column;align-items:center;padding-top:26px;">
-          <span style="width:9px;height:9px;border-radius:2px;background:var(--t-gold);"></span>
-          <span style="width:1px;flex:1;background:var(--t-line);"></span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--t-faint);">
-            <span>14:58:02</span><span>609b4954</span><span>1.4s</span>
-          </div>
-          <sc-if value="{{ showTools }}" hint-placeholder-val="{{ true }}">
-          <div style="display:flex;flex-direction:column;gap:10px;">
-            <div style="display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:4px 12px 4px 9px;border-radius:999px;background:var(--t-gold-soft);color:var(--t-gold);font-size:13px;font-weight:600;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-              memory.search
+            ${systemMsgs.length > 0 && html`
+              <div>
+                <div class="collapsible-header" onClick=${() => setShowSystem(!showSystem)}>
+                  <span>⚙️ System Prompt Context (${systemMsgs.length} block${systemMsgs.length > 1 ? 's' : ''})</span>
+                  <div style="display:flex; gap:8px; align-items:center;">
+                    <span class="token-badge">~${systemTokens} tok</span>
+                    <span>${showSystem ? '▼ Hide' : '▶ Expand'}</span>
+                  </div>
+                </div>
+                ${showSystem && systemMsgs.map((m, idx) => html`
+                  <div class="message-bubble role-system" key=${idx} style="margin-top:8px;">
+                    ${m.content}
+                  </div>
+                `)}
+              </div>
+            `}
+
+            ${renderUser && historyMsgs.length > 0 && html`
+              <div>
+                <div class="collapsible-header" onClick=${() => setShowHistory(!showHistory)}>
+                  <span>💬 Previous Context (${historyMsgs.length} message${historyMsgs.length > 1 ? 's' : ''})</span>
+                  <div style="display:flex; gap:8px; align-items:center;">
+                    <span class="token-badge">~${historyTokens} tok</span>
+                    <span>${showHistory ? '▼ Hide' : '▶ Expand'}</span>
+                  </div>
+                </div>
+                ${showHistory && historyMsgs.map((m, idx) => html`
+                  <div key=${idx} style="margin-top:8px;">
+                    <div style="font-size:0.75rem; color:var(--t-faint); font-weight:700; margin-bottom:4px; text-transform:uppercase; font-family:var(--font-mono);">
+                      ${m.role === 'user' ? '👤 USER' : m.role === 'assistant' ? '🤖 ASSISTANT' : m.role === 'tool' ? '🔧 TOOL RESULT' : m.role} (~${estimateTokens(m.content)} tok)
+                    </div>
+                    <div class="message-bubble ${m.role === 'user' ? 'role-user' : m.role === 'tool' ? 'role-tool' : 'role-assistant'}">
+                      ${m.content}
+                    </div>
+                  </div>
+                `)}
+              </div>
+            `}
+
+            ${renderTools && activeToolMsgs.length > 0 && html`
+              ${activeToolMsgs.map((m, idx) => html`
+                <div key=${idx}>
+                  <div style="font-size:0.75rem; color:var(--t-gold); font-weight:700; margin-bottom:6px; font-family:var(--font-mono);">
+                    🔧 TOOL RESULT RETURNED ${m.tool_call_id ? `(ID: ${m.tool_call_id})` : ''} (~${estimateTokens(m.content)} tok)
+                  </div>
+                  <div class="message-bubble role-tool">
+                    ${m.content}
+                  </div>
+                </div>
+              `)}
+            `}
+
+            ${renderUser && latestUserMsg && html`
+              <div>
+                <div style="font-size:0.75rem; color:var(--t-accent); font-weight:700; margin-bottom:6px; font-family:var(--font-mono);">
+                  👤 ${historyMsgs.length > 0 ? 'LATEST USER INPUT' : 'USER INPUT'} (~${estimateTokens(latestUserMsg.content)} tok)
+                </div>
+                <div class="message-bubble role-user">
+                  ${latestUserMsg.content}
+                </div>
+              </div>
+            `}
+
+            ${thinking && html`
+              <div>
+                <div class="collapsible-header" onClick=${() => setShowThinking(!showThinking)}>
+                  <span>🧠 Model Reasoning / Thinking</span>
+                  <div style="display:flex; gap:8px; align-items:center;">
+                    <span class="token-badge">~${thinkingTokens} tok</span>
+                    <span>${showThinking ? '▼ Hide' : '▶ Expand'}</span>
+                  </div>
+                </div>
+                ${showThinking && html`
+                  <div class="thinking-box" style="margin-top:8px;">
+                    ${thinking}
+                  </div>
+                `}
+              </div>
+            `}
+
+            ${renderBot && (botOutput || (!thinking && !toolCalls)) && html`
+              <div>
+                <div style="font-size:0.75rem; color:var(--t-sage); font-weight:700; margin-bottom:6px; font-family:var(--font-mono);">
+                  🤖 BOT RESPONSE (~${estimateTokens(botOutput)} tok)
+                </div>
+                <div class="message-bubble role-assistant">
+                  ${botOutput ? botOutput : html`<span style="color:var(--t-mute); font-style:italic;">(No text content in response)</span>`}
+                </div>
+              </div>
+            `}
+
+            ${renderTools && toolCalls && html`
+              <div>
+                <div style="font-size:0.75rem; color:var(--t-gold); font-weight:700; margin-bottom:6px; font-family:var(--font-mono);">
+                  🛠️ TOOL CALLS GENERATED
+                </div>
+                <div class="message-bubble role-tool">
+                  ${JSON.stringify(toolCalls, null, 2)}
+                </div>
+              </div>
+            `}
+
+            <div class="token-bar">
+              <span>Status: <strong style="color:${log.status === 'success' ? 'var(--t-sage)' : 'var(--t-rose)'}">${log.status || 'unknown'}</strong></span>
+              ${log.sequence_id ? html`<span>Seq: ${log.sequence_id.slice(0, 8)}</span>` : null}
+              ${log.input_hash ? html`<span>Hash: ${log.input_hash.slice(0, 8)}</span>` : null}
             </div>
-            <pre style="margin:0;font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.85;color:var(--t-mute);white-space:pre-wrap;overflow-x:auto;">{ "query": "DAG escape prior discussion", "k": 4 }
-→ 4 hits · 148 tok</pre>
           </div>
-          </sc-if>
-          <sc-if value="{{ hideTools }}" hint-placeholder-val="{{ false }}">
-          <p style="margin:0;font-size:13.5px;color:var(--t-faint);">Tool turn hidden by the current slice.</p>
-          </sc-if>
-        </div>
-      </article>
-      </sc-if>
+        </article>
+      `;
+    }
 
-      <sc-if value="{{ showCard3 }}" hint-placeholder-val="{{ true }}">
-      <article style="animation:settle 600ms ease both;display:grid;grid-template-columns:22px 1fr;gap:0 22px;padding-bottom:38px;margin-bottom:38px;border-bottom:1px solid var(--t-line);">
-        <div style="display:flex;flex-direction:column;align-items:center;padding-top:26px;">
-          <span style="width:9px;height:9px;border-radius:50%;background:var(--t-accent);"></span>
-          <span style="width:1px;flex:1;background:var(--t-line);"></span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:18px;min-width:0;">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--t-faint);">
-            <span>14:56:40</span><span>bc5d1563</span><span>gemma4:26b</span><span>2.9s</span>
+    function BeadsView({ token }) {
+      const [nodes, setNodes] = useState([]);
+      const [selectedNode, setSelectedNode] = useState(null);
+      const [nodeDetails, setNodeDetails] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`/api/thread?token=${encodeURIComponent(token)}`)
+          .then(res => res.json())
+          .then(data => {
+            setNodes(data);
+            setLoading(false);
+          })
+          .catch(err => console.error("Failed to load thread skeleton:", err));
+      }, [token]);
+
+      const inspectNode = (nodeId) => {
+        setSelectedNode(nodeId);
+        fetch(`/api/node/${encodeURIComponent(nodeId)}?token=${encodeURIComponent(token)}`)
+          .then(res => res.json())
+          .then(data => setNodeDetails(data))
+          .catch(err => console.error("Failed to load node payload:", err));
+      };
+
+      if (loading) {
+        return html`<div style="padding:40px; color:var(--t-mute); text-align:center;">Loading thread graph...</div>`;
+      }
+
+      if (nodes.length === 0) {
+        return html`<div style="padding:40px; color:var(--t-mute); text-align:center;">No context node graph found.</div>`;
+      }
+
+      const totalNodes = nodes.length;
+      const uniqueSequences = new Set(nodes.map(n => n.sequence_id || n.turn_id).filter(Boolean));
+      const totalTokens = nodes.reduce((sum, n) => sum + (n.token_count || 0), 0);
+      const toolNodesCount = nodes.filter(n => n.has_tools || n.role === 'tool').length;
+
+      const nodeCoords = {};
+      const nodeIndexMap = {};
+      nodes.forEach((n, idx) => { nodeIndexMap[n.id] = idx; });
+
+      let spineX = 60;
+      const layoutNodes = nodes.map((node, i) => {
+        const isBranch = node.parent_id && nodeIndexMap[node.parent_id] !== undefined && nodeIndexMap[node.parent_id] < i - 1;
+        const x = isBranch ? (nodeCoords[node.parent_id]?.x || 60) + 40 : spineX;
+        const y = isBranch ? 60 : 130;
+        
+        if (!isBranch) spineX += 110;
+        
+        nodeCoords[node.id] = { x, y };
+        return { ...node, x, y, isBranch };
+      });
+
+      const seqGroups = {};
+      layoutNodes.forEach(n => {
+        const seqKey = n.sequence_id || n.turn_id || 'unbound';
+        if (!seqGroups[seqKey]) seqGroups[seqKey] = [];
+        seqGroups[seqKey].push(n);
+      });
+
+      const svgWidth = Math.max(900, spineX + 120);
+
+      return html`
+        <div class="beads-container">
+          <div class="stats-bar">
+            <span><span class="stat-val">${totalNodes}</span> <span style="color:var(--t-faint);">nodes</span></span>
+            <span><span class="stat-val" style="color:var(--t-accent);">${uniqueSequences.size}</span> <span style="color:var(--t-faint);">sequence${uniqueSequences.size !== 1 ? 's' : ''}</span></span>
+            <span><span class="stat-val" style="color:var(--t-gold);">${toolNodesCount}</span> <span style="color:var(--t-faint);">tool calls</span></span>
+            <span><span class="stat-val" style="color:var(--t-sage);">~${totalTokens}</span> <span style="color:var(--t-faint);">tokens</span></span>
           </div>
-          <sc-if value="{{ showUser }}" hint-placeholder-val="{{ true }}">
-          <p style="margin:0;font-size:19px;line-height:1.5;color:var(--t-accent);max-width:60ch;">is the context graph acyclic by construction?</p>
-          </sc-if>
-          <sc-if value="{{ showBot }}" hint-placeholder-val="{{ true }}">
-          <p style="margin:0;font-size:17px;line-height:1.8;max-width:66ch;">Yes — every bead carries a parent hash, and a bead is written only after its parent exists. Cycles are unrepresentable rather than merely forbidden.</p>
-          </sc-if>
-          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;color:var(--t-faint);">
-            <span>context 402</span><span>seq 9a25f075</span>
+
+          <div style="font-size:0.85rem; color:var(--t-faint);">
+            Touch any bead to inspect its payload details.
           </div>
+
+          <div class="svg-viewport">
+            <svg width="${svgWidth}" height="280" style="min-width:100%;">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--t-faint)" />
+                </marker>
+              </defs>
+
+              ${Object.entries(seqGroups).map(([seqKey, seqNodes]) => {
+                if (seqNodes.length === 0) return null;
+                const minX = Math.min(...seqNodes.map(n => n.x)) - 25;
+                const maxX = Math.max(...seqNodes.map(n => n.x)) + 25;
+                const width = Math.max(70, maxX - minX);
+                const shortSeq = seqKey.slice(0, 8);
+
+                return html`
+                  <g key="${seqKey}">
+                    <rect 
+                      x="${minX}" y="35" width="${width}" height="190" rx="14" 
+                      fill="var(--t-panel-2)" 
+                      stroke="var(--t-line)" 
+                      stroke-dasharray="4 4"
+                    />
+                    <text 
+                      x="${minX + 10}" y="52" 
+                      fill="var(--t-faint)" 
+                      font-size="9.5" 
+                      font-family="var(--font-mono)"
+                      font-weight="600"
+                    >
+                      SEQ #${shortSeq}
+                    </text>
+                  </g>
+                `;
+              })}
+
+              ${layoutNodes.map(node => {
+                if (!node.parent_id || !nodeCoords[node.parent_id]) return null;
+                const parent = nodeCoords[node.parent_id];
+                return html`
+                  <line 
+                    x1="${parent.x}" y1="${parent.y}" 
+                    x2="${node.x}" y2="${node.y}" 
+                    stroke="${node.isBranch ? 'var(--t-gold)' : 'var(--t-sage)'}" 
+                    stroke-width="2" 
+                    stroke-dasharray="${node.isBranch ? '4 4' : 'none'}"
+                    marker-end="url(#arrow)"
+                  />
+                `;
+              })}
+
+              ${layoutNodes.map(node => {
+                if (!node.subsumes || node.subsumes.length === 0) return null;
+                return node.subsumes.map(subId => {
+                  const target = nodeCoords[subId];
+                  if (!target) return null;
+                  return html`
+                    <line 
+                      x1="${node.x}" y1="${node.y}" 
+                      x2="${target.x}" y2="${target.y}" 
+                      stroke="var(--t-gold)" 
+                      stroke-width="1.5" 
+                      stroke-dasharray="3 3"
+                    />
+                  `;
+                });
+              })}
+
+              ${layoutNodes.map(node => {
+                const isSelected = selectedNode === node.id;
+                const isSquish = node.subsumes && node.subsumes.length > 0;
+                const hasTools = node.has_tools || node.role === "tool";
+                
+                let fillColor = "var(--t-purple)";
+                if (node.role === "user") fillColor = "var(--t-accent)";
+                if (node.role === "assistant") fillColor = "var(--t-sage)";
+                if (node.role === "tool" || hasTools) fillColor = "var(--t-gold)";
+                if (isSquish) fillColor = "#4ade80";
+
+                const shortHash = node.id ? node.id.slice(0, 8) : 'node';
+
+                return html`
+                  <g 
+                    key="${node.id}" 
+                    onClick=${() => inspectNode(node.id)} 
+                    style="cursor:pointer;"
+                  >
+                    ${hasTools && html`
+                      <text 
+                        x="${node.x}" y="${node.y - 22}" 
+                        font-size="14" 
+                        text-anchor="middle"
+                      >
+                        🔧
+                      </text>
+                    `}
+
+                    <circle 
+                      cx="${node.x}" cy="${node.y}" r="${isSelected ? 18 : 14}" 
+                      fill="${fillColor}" 
+                      fill-opacity="0.25"
+                      stroke="${fillColor}" 
+                      stroke-width="${isSelected ? 3 : 2}"
+                      stroke-dasharray="${isSquish ? '3 3' : 'none'}"
+                    />
+                    <circle cx="${node.x}" cy="${node.y}" r="5" fill="${fillColor}" />
+                    
+                    <text 
+                      x="${node.x}" y="${node.y + 28}" 
+                      fill="var(--t-ink)" 
+                      font-size="10.5" 
+                      text-anchor="middle" 
+                      font-family="var(--font-mono)"
+                      font-weight="600"
+                    >
+                      ${shortHash}
+                    </text>
+                  </g>
+                `;
+              })}
+            </svg>
+          </div>
+
+          ${selectedNode && html`
+            <div class="node-drawer">
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--t-line); padding-bottom:12px;">
+                <span style="font-family:var(--font-heading); font-size:18px; color:var(--t-ink);">Node Inspector</span>
+                <button 
+                  onClick=${() => setSelectedNode(null)} 
+                  style="background:none; border:none; color:var(--t-mute); cursor:pointer; font-size:1.2rem;"
+                >✕</button>
+              </div>
+
+              ${nodeDetails ? html`
+                <div style="font-family:var(--font-mono); font-size:13px; display:flex; flex-direction:column; gap:14px;">
+                  <div><strong>Node ID:</strong> ${selectedNode}</div>
+                  ${nodeDetails.sequence_id ? html`<div><strong>Seq ID:</strong> ${nodeDetails.sequence_id}</div>` : null}
+                  <div><strong>Role:</strong> <span style="color:var(--t-sage); font-weight:700;">${nodeDetails.message?.role || nodeDetails.role}</span></div>
+                  <div><strong>Tokens:</strong> ~${nodeDetails.token_count || estimateTokens(nodeDetails.message?.content || '')}</div>
+                  
+                  ${(nodeDetails.raw_output?.tool_calls || nodeDetails.message?.tool_calls) && html`
+                    <div>
+                      <strong style="color:var(--t-gold)">🔧 Tool Calls Executed:</strong>
+                      <div class="message-bubble role-tool" style="margin-top:6px;">
+                        ${JSON.stringify(nodeDetails.raw_output?.tool_calls || nodeDetails.message?.tool_calls, null, 2)}
+                      </div>
+                    </div>
+                  `}
+
+                  <div>
+                    <strong style="color:var(--t-sage)">Content Payload:</strong>
+                    <div class="message-bubble role-assistant" style="margin-top:6px;">
+                      ${(nodeDetails.message?.content != null && nodeDetails.message.content !== '')
+                        ? nodeDetails.message.content
+                        : (nodeDetails.raw_output?.content != null && nodeDetails.raw_output.content !== '')
+                          ? nodeDetails.raw_output.content
+                          : html`<span style="color:var(--t-mute); font-style:italic;">(No text content — tool-only turn)</span>`}
+                    </div>
+                  </div>
+                </div>
+              ` : html`<div style="color:var(--t-mute)">Loading payload...</div>`}
+            </div>
+          `}
         </div>
-      </article>
-      </sc-if>
+      `;
+    }
 
-      <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
-      <div style="padding:80px 20px;text-align:center;color:var(--t-mute);">
-        <p style="margin:0 0 6px;font-family:'Caprasimo',serif;font-size:20px;color:var(--t-ink);">Nothing here yet</p>
-        <p style="margin:0;font-size:14.5px;">No calls match the current slice.</p>
-      </div>
-      </sc-if>
+    function App() {
+      const [logs, setLogs] = useState([]);
+      const [status, setStatus] = useState('connecting');
+      const [activeTab, setActiveTab] = useState('ongoing');
+      const [viewMode, setViewMode] = useState('interleaved');
+      const [statusFilter, setStatusFilter] = useState('all');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [maxRecords, setMaxRecords] = useState(250);
+      const [theme, setTheme] = useState(localStorage.getItem('tremor_theme') || 'dark');
 
-    </section>
-  </main>
-  </sc-if>
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token') || '';
 
-  <sc-if value="{{ isBeads }}" hint-placeholder-val="{{ false }}">
-  <main style="flex:1;display:flex;flex-direction:column;padding:34px 44px 60px;gap:26px;position:relative;">
-    <div style="display:flex;align-items:flex-end;gap:28px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:260px;">
-        <h2 style="margin:0 0 6px;font-family:'Caprasimo',serif;font-size:24px;font-weight:400;">The thread</h2>
-        <p style="margin:0;font-size:14.5px;color:var(--t-mute);">One sequence, twelve beads. Touch a bead to read what it carries.</p>
-      </div>
-      <div style="display:flex;gap:5px;background:var(--t-panel-2);padding:4px;border-radius:999px;">
-        <button onClick="{{ setVine }}" style="{{ bVine }}">Vine</button>
-        <button onClick="{{ setStones }}" style="{{ bStones }}">Stepping stones</button>
-        <button onClick="{{ setPearls }}" style="{{ bPearls }}">Pearls</button>
-      </div>
-    </div>
+      const toggleTheme = () => {
+        const next = theme === 'dark' ? 'light' : 'dark';
+        setTheme(next);
+        localStorage.setItem('tremor_theme', next);
+      };
 
-    <div style="display:flex;gap:44px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--t-mute);">
-      <span><span style="font-family:'Caprasimo',serif;font-size:20px;color:var(--t-ink);">12</span> beads</span>
-      <span><span style="font-family:'Caprasimo',serif;font-size:20px;color:var(--t-ink);">1</span> sequence</span>
-      <span><span style="font-family:'Caprasimo',serif;font-size:20px;color:var(--t-gold);">2</span> tool calls</span>
-      <span><span style="font-family:'Caprasimo',serif;font-size:20px;color:var(--t-ink);">1,452</span> context tokens</span>
-      <span style="flex:1;"></span>
-      <span style="display:inline-flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--t-accent);"></span>input</span>
-      <span style="display:inline-flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--t-sage);"></span>response</span>
-      <span style="display:inline-flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:2px;background:var(--t-gold);"></span>tool</span>
-    </div>
+      useEffect(() => {
+        document.documentElement.setAttribute('data-tremor-theme', theme);
+      }, [theme]);
 
-    <div style="flex:1;min-height:360px;position:relative;display:flex;">
-    <div style="flex:1;min-width:0;border-radius:20px;border:1px solid var(--t-line);background:var(--t-panel);box-shadow:var(--t-shadow);overflow:auto;padding:8px;">
-      <svg width="{{ svgW }}" height="360" style="min-width:100%;display:block;">
-        <sc-if value="{{ isVine }}" hint-placeholder-val="{{ true }}">
-        <g>
-          <path d="{{ vineD }}" fill="none" stroke="var(--t-sage)" stroke-width="2.5" stroke-linecap="round" opacity="0.5"></path>
-          <sc-for list="{{ vineLeaves }}" as="lf" hint-placeholder-count="11">
-            <path d="{{ lf.d }}" fill="var(--t-sage)" opacity="0.2"></path>
-          </sc-for>
-          <sc-for list="{{ vineNodes }}" as="n" hint-placeholder-count="12">
-            <g onClick="{{ n.onClick }}" style="cursor:pointer;">
-              <circle cx="{{ n.x }}" cy="{{ n.y }}" r="{{ n.r }}" fill="var(--t-panel)" stroke="{{ n.color }}" stroke-width="1.6"></circle>
-              <circle cx="{{ n.x }}" cy="{{ n.y }}" r="4.5" fill="{{ n.color }}"></circle>
-              <text x="{{ n.x }}" y="{{ n.labelY }}" fill="var(--t-faint)" font-size="10.5" text-anchor="middle" font-family="IBM Plex Mono, monospace">{{ n.short }}</text>
-            </g>
-          </sc-for>
-        </g>
-        </sc-if>
+      useEffect(() => {
+        const eventSource = new EventSource(`/api/tail/llm_calls?token=${encodeURIComponent(token)}`);
 
-        <sc-if value="{{ isStones }}" hint-placeholder-val="{{ false }}">
-        <g>
-          <path d="{{ flatD }}" fill="none" stroke="var(--t-line)" stroke-width="14" stroke-linecap="round"></path>
-          <sc-for list="{{ flatNodes }}" as="n" hint-placeholder-count="12">
-            <g onClick="{{ n.onClick }}" style="cursor:pointer;">
-              <ellipse cx="{{ n.x }}" cy="{{ n.y }}" rx="{{ n.rx }}" ry="16" fill="var(--t-panel)" stroke="{{ n.color }}" stroke-width="1.4"></ellipse>
-              <text x="{{ n.x }}" y="{{ n.midY }}" fill="{{ n.color }}" font-size="10.5" text-anchor="middle" font-family="IBM Plex Mono, monospace">{{ n.short }}</text>
-            </g>
-          </sc-for>
-        </g>
-        </sc-if>
+        eventSource.onopen = () => setStatus('connected');
+        eventSource.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            setLogs(prev => [data, ...prev].slice(0, maxRecords));
+          } catch (err) {
+            console.error("Parse error:", err);
+          }
+        };
+        eventSource.onerror = () => setStatus('disconnected');
 
-        <sc-if value="{{ isPearls }}" hint-placeholder-val="{{ false }}">
-        <g>
-          <path d="{{ flatD }}" fill="none" stroke="var(--t-accent)" stroke-width="1.2" opacity="0.35"></path>
-          <sc-for list="{{ pearlNodes }}" as="n" hint-placeholder-count="12">
-            <g onClick="{{ n.onClick }}" style="cursor:pointer;">
-              <circle cx="{{ n.x }}" cy="{{ n.y }}" r="13" fill="{{ n.color }}" opacity="0.9"></circle>
-              <circle cx="{{ n.hlX }}" cy="{{ n.hlY }}" r="4" fill="#fff" opacity="0.3"></circle>
-              <text x="{{ n.x }}" y="{{ n.labelY }}" fill="var(--t-faint)" font-size="10.5" text-anchor="middle" font-family="IBM Plex Mono, monospace">{{ n.short }}</text>
-            </g>
-          </sc-for>
-        </g>
-        </sc-if>
-      </svg>
-    </div>
+        return () => eventSource.close();
+      }, [maxRecords, token]);
 
-    <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
-    <div style="position:absolute;top:0;right:0;bottom:0;width:400px;background:var(--t-panel);border:1px solid var(--t-line);border-radius:20px;box-shadow:var(--t-shadow-lift);padding:28px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;animation:settle 320ms ease both;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--t-faint);">{{ selShort }}</span>
-        <button onClick="{{ clearSel }}" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:999px;border:1px solid var(--t-line);background:transparent;color:var(--t-mute);cursor:pointer;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
-        </button>
-      </div>
-      <p style="margin:0;font-size:17px;line-height:1.75;color:{{ selColor }};">{{ selBody }}</p>
-      <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--t-faint);">
-        <span>{{ selRole }}</span><span>{{ selTokens }}</span><span>seq 9a25f075</span>
-      </div>
-    </div>
-    </sc-if>
-    </div>
-  </main>
-  </sc-if>
+      const filteredLogs = useMemo(() => {
+        return logs.filter(log => {
+          if (statusFilter === 'error' && log.status !== 'error' && !log.error_message) return false;
+          if (statusFilter === 'success' && log.status !== 'success') return false;
 
-</div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
-const RAW = [
-  ['9a25f075','user',96],['7a5be3bf','assistant',212],['bc5d1563','user',31],
-  ['609b4954','tool',148],['0d2acf66','tool',96],['ef1bd9e4','assistant',180],
-  ['fc9121a6','user',22],['da61e0d9','assistant',164],['789d1bf4','user',18],
-  ['e70b16d8','assistant',201],['4d0a840d','user',7],['456a2e40','assistant',681]
-];
-const BODY = {
-  user: 'how do we escape the DAGs?',
-  assistant: 'That is a profound question, and "escaping" depends entirely on which dimension of the DAG we are trapped in.',
-  tool: '{ "query": "DAG escape prior discussion", "k": 4 } → 4 hits'
-};
+          if (viewMode === 'tools') {
+            const hasToolCalls = (log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0) || (log.prompt || []).some(m => m.role === 'tool');
+            if (!hasToolCalls) return false;
+          }
+          if (viewMode === 'user') {
+            const hasUserMsg = (log.prompt || []).some(m => m.role === 'user');
+            if (!hasUserMsg) return false;
+          }
+          if (viewMode === 'bot') {
+            const hasBotMsg = (log.raw_output?.content && log.raw_output.content.trim().length > 0) || (log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0);
+            if (!hasBotMsg) return false;
+          }
 
-class Component extends DCLogic {
-  state = { theme:'dark', tab:'log', view:'all', status:'all', q:'', bead:'vine', sel:null, density:'open' };
+          if (!searchQuery.trim()) return true;
+          const q = searchQuery.toLowerCase();
 
-  pill(active) {
-    return { padding:'8px 18px', borderRadius:'999px', border:'1px solid transparent',
-      background: active ? 'var(--t-panel)' : 'transparent',
-      color: active ? 'var(--t-sage)' : 'var(--t-mute)',
-      boxShadow: active ? 'var(--t-shadow)' : 'none',
-      fontFamily:'inherit', fontSize:'13.5px', fontWeight: active ? 600 : 500,
-      cursor:'pointer', transition:'all 240ms ease', whiteSpace:'nowrap' };
-  }
-  row(active, tone) {
-    const c = tone === 'error' ? 'var(--t-accent)' : 'var(--t-sage)';
-    const soft = tone === 'error' ? 'var(--t-accent-soft)' : 'var(--t-sage-soft)';
-    return { textAlign:'left', padding:'9px 14px', borderRadius:'12px', border:'1px solid transparent',
-      background: active ? soft : 'transparent',
-      color: active ? c : 'var(--t-mute)',
-      fontFamily:'inherit', fontSize:'14px', fontWeight: active ? 600 : 450,
-      cursor:'pointer', transition:'all 220ms ease' };
-  }
-  nodeColor(role) {
-    if (role === 'user') return 'var(--t-accent)';
-    if (role === 'tool') return 'var(--t-gold)';
-    return 'var(--t-sage)';
-  }
+          const modelMatch = (log.model || '').toLowerCase().includes(q);
+          const statusMatch = (log.status || '').toLowerCase().includes(q);
+          const seqMatch = (log.sequence_id || '').toLowerCase().includes(q);
+          const idMatch = (log.id || '').toLowerCase().includes(q);
+          const errorMatch = (log.error_message || '').toLowerCase().includes(q);
+          
+          const promptMatch = (log.prompt || []).some(m => (m.content || '').toLowerCase().includes(q));
+          const responseMatch = (log.raw_output?.content || '').toLowerCase().includes(q);
+          const thinkingMatch = (log.raw_output?.thinking || '').toLowerCase().includes(q);
 
-  renderVals() {
-    const s = this.state;
-    const set = (k, v) => () => this.setState({ [k]: v });
-    const q = s.q.trim().toLowerCase();
-    const idx = [
-      '0aff8a00 gemma4:26b how do we escape the dags fox ears cycle recurrence memory agency meaning',
-      '609b4954 memory.search tool call dag escape prior discussion',
-      'bc5d1563 gemma4:26b acyclic by construction parent hash beads'
-    ];
-    const ok = s.status !== 'error';
-    const c1 = (!q || idx[0].includes(q)) && ok && s.view !== 'tools';
-    const c2 = (!q || idx[1].includes(q)) && ok && s.view !== 'user' && s.view !== 'bot';
-    const c3 = (!q || idx[2].includes(q)) && ok && s.view !== 'tools';
+          return modelMatch || statusMatch || seqMatch || idMatch || errorMatch || promptMatch || responseMatch || thinkingMatch;
+        });
+      }, [logs, searchQuery, statusFilter, viewMode]);
 
-    const step = 150, base = 96;
-    const mk = yFn => RAW.map((r, i) => {
-      const [id, role, tok] = r;
-      const x = base + i * step, y = yFn(i);
-      return { short:id, role, x, y, color:this.nodeColor(role),
-        r: role === 'tool' ? 15 : 13, rx: 34, midY: y + 4, labelY: y + 34,
-        hlX: x - 4, hlY: y - 4,
-        onClick: () => this.setState({ sel:{ short:id, role, tok } }) };
-    });
-    const vineNodes = mk(i => 170 + Math.sin(i * 0.62) * 44);
-    const flatNodes = mk(() => 170);
+      return html`
+        <div style="display:flex; flex-direction:column; height:100vh;">
+          <header>
+            <div class="brand">
+              <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <circle cx="16" cy="16" r="15" fill="none" stroke="var(--t-line)" stroke-width="1"></circle>
+                <circle cx="16" cy="16" r="10.5" fill="none" stroke="var(--t-sage)" stroke-width="1.4" opacity="0.65"></circle>
+                <circle cx="16" cy="16" r="6" fill="none" stroke="var(--t-accent)" stroke-width="1.6"></circle>
+                <circle cx="16" cy="16" r="2.4" fill="var(--t-accent)"></circle>
+              </svg>
+              <div style="display:flex; flex-direction:column; gap:1px;">
+                <span class="brand-title">Tremor</span>
+                <span class="brand-sub">Observability Engine</span>
+              </div>
+            </div>
 
-    let vineD = '';
-    vineNodes.forEach((n, i) => {
-      if (i === 0) { vineD = 'M ' + n.x + ' ' + n.y; return; }
-      const p = vineNodes[i - 1], mx = (p.x + n.x) / 2;
-      vineD += ' C ' + mx + ' ' + p.y + ', ' + mx + ' ' + n.y + ', ' + n.x + ' ' + n.y;
-    });
-    const vineLeaves = vineNodes.slice(0, -1).map((n, i) => {
-      const nx = vineNodes[i + 1], mx = (n.x + nx.x) / 2, my = (n.y + nx.y) / 2;
-      const up = i % 2 === 0 ? -1 : 1;
-      return { d: 'M ' + mx + ' ' + my + ' q 16 ' + (20 * up) + ' 34 ' + (4 * up) + ' q -20 ' + (6 * up) + ' -34 ' + (-4 * up) + ' z' };
-    });
-    const sel = s.sel;
+            <nav class="nav-tabs">
+              <button class="nav-tab ${activeTab === 'ongoing' ? 'active' : ''}" onClick=${() => setActiveTab('ongoing')}>
+                Ongoing Log
+              </button>
+              <button class="nav-tab ${activeTab === 'beads' ? 'active' : ''}" onClick=${() => setActiveTab('beads')}>
+                Thread Graph
+              </button>
+            </nav>
 
-    return {
-      theme:s.theme,
-      toggleTheme:() => this.setState({ theme: s.theme === 'light' ? 'dark' : 'light' }),
-      isLog: s.tab === 'log', isBeads: s.tab === 'beads',
-      goLog:set('tab','log'), goBeads:set('tab','beads'),
-      tabLogStyle:this.pill(s.tab === 'log'), tabBeadsStyle:this.pill(s.tab === 'beads'),
+            <div style="display:flex; align-items:center; justify-content:flex-end; gap:18px;">
+              <div class="status-badge">
+                <span class="status-dot ${status}"></span>
+                <span>${status.toUpperCase()} (${filteredLogs.length} / ${logs.length} calls)</span>
+              </div>
+              <button class="theme-btn" onClick=${toggleTheme} title="Switch theme">
+                ${theme === 'dark'
+                  ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.9 4.9 1.4 1.4"></path><path d="m17.7 17.7 1.4 1.4"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.3 17.7-1.4 1.4"></path><path d="m19.1 4.9-1.4 1.4"></path></svg>`
+                  : html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 0 1 1-9-9Z"></path></svg>`
+                }
+              </button>
+            </div>
+          </header>
+          
+          <main>
+            ${activeTab === 'ongoing' && html`
+              <aside class="sidebar">
+                <div class="sidebar-section">
+                  <span class="sidebar-label">Slices</span>
+                  <div class="filter-stack">
+                    <button class="filter-btn ${viewMode === 'interleaved' ? 'active' : ''}" onClick=${() => setViewMode('interleaved')}>
+                      Everything
+                    </button>
+                    <button class="filter-btn ${viewMode === 'bot' ? 'active' : ''}" onClick=${() => setViewMode('bot')}>
+                      Responses
+                    </button>
+                    <button class="filter-btn ${viewMode === 'user' ? 'active' : ''}" onClick=${() => setViewMode('user')}>
+                      Inputs
+                    </button>
+                    <button class="filter-btn ${viewMode === 'tools' ? 'active' : ''}" onClick=${() => setViewMode('tools')}>
+                      Tool calls
+                    </button>
+                  </div>
+                </div>
 
-      q:s.q, onSearch:e => this.setState({ q:e.target.value }),
-      setViewAll:set('view','all'), setViewBot:set('view','bot'), setViewUser:set('view','user'), setViewTools:set('view','tools'),
-      sliceAll:this.row(s.view === 'all'), sliceBot:this.row(s.view === 'bot'), sliceUser:this.row(s.view === 'user'), sliceTools:this.row(s.view === 'tools'),
-      setStatusAll:set('status','all'), setStatusOk:set('status','ok'), setStatusErr:set('status','error'),
-      statAll:this.row(s.status === 'all'), statOk:this.row(s.status === 'ok'), statErr:this.row(s.status === 'error','error'),
-      setOpen:set('density','open'), setFolded:set('density','folded'),
-      dOpen:this.row(s.density === 'open'), dFolded:this.row(s.density === 'folded'),
-      isOpen: s.density === 'open',
+                <div class="sidebar-section">
+                  <span class="sidebar-label">Status</span>
+                  <div class="filter-stack">
+                    <button class="filter-btn ${statusFilter === 'all' ? 'active' : ''}" onClick=${() => setStatusFilter('all')}>
+                      All
+                    </button>
+                    <button class="filter-btn ${statusFilter === 'success' ? 'active' : ''}" onClick=${() => setStatusFilter('success')}>
+                      Settled
+                    </button>
+                    <button class="filter-btn ${statusFilter === 'error' ? 'active-error' : ''}" onClick=${() => setStatusFilter('error')}>
+                      Errors
+                    </button>
+                  </div>
+                </div>
 
-      showUser: s.view === 'all' || s.view === 'user',
-      showBot: s.view === 'all' || s.view === 'bot',
-      showTools: s.view === 'all' || s.view === 'tools',
-      hideTools: !(s.view === 'all' || s.view === 'tools'),
-      showCard1:c1, showCard2:c2, showCard3:c3, noResults: !c1 && !c2 && !c3,
+                <div class="sidebar-section">
+                  <span class="sidebar-label">Find</span>
+                  <div class="search-box">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--t-faint)" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                    <input 
+                      type="text" 
+                      class="search-input" 
+                      placeholder="text, model, id..." 
+                      value=${searchQuery} 
+                      onInput=${e => setSearchQuery(e.target.value)} 
+                    />
+                    ${searchQuery && html`
+                      <button class="search-clear" onClick=${() => setSearchQuery('')}>✕</button>
+                    `}
+                  </div>
+                </div>
 
-      setVine:set('bead','vine'), setStones:set('bead','stones'), setPearls:set('bead','pearls'),
-      bVine:this.pill(s.bead === 'vine'), bStones:this.pill(s.bead === 'stones'), bPearls:this.pill(s.bead === 'pearls'),
-      isVine: s.bead === 'vine', isStones: s.bead === 'stones', isPearls: s.bead === 'pearls',
-      vineNodes, flatNodes, pearlNodes:flatNodes, vineD, vineLeaves,
-      svgW: base + RAW.length * step,
-      flatD: 'M ' + base + ' 170 L ' + (base + (RAW.length - 1) * step) + ' 170',
+                <div class="sidebar-section">
+                  <span class="sidebar-label">Max Buffer</span>
+                  <select 
+                    class="select-input" 
+                    value=${maxRecords} 
+                    onChange=${e => setMaxRecords(Number(e.target.value))}
+                  >
+                    <option value="100">100 Records</option>
+                    <option value="250">250 Records</option>
+                    <option value="500">500 Records</option>
+                    <option value="1000">1000 Records</option>
+                  </select>
+                </div>
+              </aside>
+            `}
 
-      hasSel: !!sel, clearSel:() => this.setState({ sel:null }),
-      selShort: sel ? sel.short : '',
-      selRole: sel ? (sel.role === 'user' ? 'input' : sel.role === 'tool' ? 'tool' : 'response') : '',
-      selColor: sel ? this.nodeColor(sel.role) : 'var(--t-ink)',
-      selTokens: sel ? '~' + sel.tok + ' tok' : '',
-      selBody: sel ? BODY[sel.role] : ''
-    };
-  }
-}
-</script>
+            <div class="content-area">
+              ${activeTab === 'ongoing' ? html`
+                <div class="log-stream">
+                  ${filteredLogs.length === 0 ? html`
+                    <div style="text-align:center; padding:80px 20px; color:var(--t-mute)">
+                      <p style="margin:0 0 6px; font-family:var(--font-heading); font-size:20px; color:var(--t-ink);">Nothing here yet</p>
+                      <p style="margin:0; font-size:14.5px;">No calls match the current slice or search filter.</p>
+                    </div>
+                  ` : filteredLogs.map((log, idx) => html`
+                    <${LogCard} key=${log.id || idx} log=${log} viewMode=${viewMode} />
+                  `)}
+                </div>
+              ` : html`
+                <${BeadsView} token=${token} />
+              `}
+            </div>
+          </main>
+        </div>
+      `;
+    }
+
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
 </body>
 </html>
