@@ -220,6 +220,7 @@
       flex-direction: column;
       overflow: hidden;
       background: #0b0e14;
+      position: relative;
     }
 
     .log-stream {
@@ -364,6 +365,41 @@
       border-top: 1px solid rgba(255, 255, 255, 0.05);
       flex-wrap: wrap;
     }
+
+    /* Beads SVG Container & Drawer */
+    .beads-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 20px;
+    }
+
+    .svg-viewport {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      overflow: auto;
+      position: relative;
+    }
+
+    .node-drawer {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 420px;
+      background: var(--panel-bg);
+      border-left: 1px solid var(--panel-border);
+      box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+      padding: 20px;
+      overflow-y: auto;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
   </style>
 </head>
 <body>
@@ -498,23 +534,194 @@
       `;
     }
 
+    // Hand-Rolled SVG Beads View Component
+    function BeadsView({ token }) {
+      const [nodes, setNodes] = useState([]);
+      const [selectedNode, setSelectedNode] = useState(null);
+      const [nodeDetails, setNodeDetails] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`/api/thread?token=${encodeURIComponent(token)}`)
+          .then(res => res.json())
+          .then(data => {
+            setNodes(data);
+            setLoading(false);
+          })
+          .catch(err => console.error("Failed to load thread skeleton:", err));
+      }, [token]);
+
+      const inspectNode = (nodeId) => {
+        setSelectedNode(nodeId);
+        fetch(`/api/node/${encodeURIComponent(nodeId)}?token=${encodeURIComponent(token)}`)
+          .then(res => res.json())
+          .then(data => setNodeDetails(data))
+          .catch(err => console.error("Failed to load node payload:", err));
+      };
+
+      if (loading) {
+        return html`<div style="padding:40px; color:var(--text-muted); text-align:center;">Loading thread skeleton graph...</div>`;
+      }
+
+      if (nodes.length === 0) {
+        return html`<div style="padding:40px; color:var(--text-muted); text-align:center;">No context node graph found in EMPAWS directory.</div>`;
+      }
+
+      // Hand-Rolled Linear Spine + Branch Layout Algorithm
+      const nodeCoords = {};
+      const nodeIndexMap = {};
+      nodes.forEach((n, idx) => { nodeIndexMap[n.id] = idx; });
+
+      // Layout: main spine along Y=120, offset branches at Y=50 or Y=190
+      let spineX = 60;
+      const layoutNodes = nodes.map((node, i) => {
+        const isBranch = node.parent_id && nodeIndexMap[node.parent_id] !== undefined && nodeIndexMap[node.parent_id] < i - 1;
+        const x = isBranch ? (nodeCoords[node.parent_id]?.x || 60) + 40 : spineX;
+        const y = isBranch ? 50 : 120;
+        
+        if (!isBranch) spineX += 110;
+        
+        nodeCoords[node.id] = { x, y };
+        return { ...node, x, y, isBranch };
+      });
+
+      const svgWidth = Math.max(800, spineX + 100);
+
+      return html`
+        <div class="beads-container">
+          <div style="margin-bottom:12px; font-size:0.85rem; color:var(--text-muted);">
+            Linear Spine & Branch Topology — Click any bead to inspect full lazy node payload.
+          </div>
+
+          <div class="svg-viewport">
+            <svg width="${svgWidth}" height="240" style="min-width:100%;">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+                </marker>
+              </defs>
+
+              <!-- Parent to Child Connectors -->
+              ${layoutNodes.map(node => {
+                if (!node.parent_id || !nodeCoords[node.parent_id]) return null;
+                const parent = nodeCoords[node.parent_id];
+                return html`
+                  <line 
+                    x1="${parent.x}" y1="${parent.y}" 
+                    x2="${node.x}" y2="${node.y}" 
+                    stroke="${node.isBranch ? '#fbbf24' : '#38bdf8'}" 
+                    stroke-width="2" 
+                    stroke-dasharray="${node.isBranch ? '4 4' : 'none'}"
+                    marker-end="url(#arrow)"
+                  />
+                `;
+              })}
+
+              <!-- Subsumed Fan Lines -->
+              ${layoutNodes.map(node => {
+                if (!node.subsumes || node.subsumes.length === 0) return null;
+                return node.subsumes.map(subId => {
+                  const target = nodeCoords[subId];
+                  if (!target) return null;
+                  return html`
+                    <line 
+                      x1="${node.x}" y1="${node.y}" 
+                      x2="${target.x}" y2="${target.y}" 
+                      stroke="#fbbf24" 
+                      stroke-width="1.5" 
+                      stroke-dasharray="3 3"
+                    />
+                  `;
+                });
+              })}
+
+              <!-- Bead Nodes -->
+              ${layoutNodes.map(node => {
+                const isSelected = selectedNode === node.id;
+                const isSquish = node.subsumes && node.subsumes.length > 0;
+                
+                let fillColor = "#94a3b8"; // system
+                if (node.role === "user") fillColor = "#f43f5e";
+                if (node.role === "assistant") fillColor = "#38bdf8";
+                if (isSquish) fillColor = "#fbbf24";
+
+                return html`
+                  <g 
+                    key="${node.id}" 
+                    onClick=${() => inspectNode(node.id)} 
+                    style="cursor:pointer;"
+                  >
+                    <circle 
+                      cx="${node.x}" cy="${node.y}" r="${isSelected ? 18 : 14}" 
+                      fill="${fillColor}" 
+                      fill-opacity="0.25"
+                      stroke="${fillColor}" 
+                      stroke-width="${isSelected ? 3 : 2}"
+                      stroke-dasharray="${isSquish ? '3 3' : 'none'}"
+                    />
+                    <circle cx="${node.x}" cy="${node.y}" r="5" fill="${fillColor}" />
+                    <text 
+                      x="${node.x}" y="${node.y + 28}" 
+                      fill="#94a3b8" 
+                      font-size="10" 
+                      text-anchor="middle" 
+                      font-family="monospace"
+                    >
+                      ${node.role.toUpperCase()}
+                    </text>
+                  </g>
+                `;
+              })}
+            </svg>
+          </div>
+
+          ${selectedNode && html`
+            <div class="node-drawer">
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--panel-border); padding-bottom:10px;">
+                <span style="font-weight:700; font-size:1rem; color:var(--accent-cyan);">Node Payload Inspector</span>
+                <button 
+                  onClick=${() => setSelectedNode(null)} 
+                  style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;"
+                >✕</button>
+              </div>
+
+              ${nodeDetails ? html`
+                <div style="font-family:var(--font-mono); font-size:0.83rem; display:flex; flex-direction:column; gap:12px;">
+                  <div><strong>ID:</strong> ${selectedNode}</div>
+                  <div><strong>Role:</strong> ${nodeDetails.message?.role}</div>
+                  <div><strong>Tokens:</strong> ~${nodeDetails.token_count || 0}</div>
+                  ${nodeDetails.turn_id ? html`<div><strong>Turn ID:</strong> ${nodeDetails.turn_id}</div>` : null}
+
+                  <div>
+                    <strong style="color:var(--accent-cyan)">Content:</strong>
+                    <div class="message-bubble role-assistant" style="margin-top:6px;">
+                      ${nodeDetails.message?.content || JSON.stringify(nodeDetails.message, null, 2)}
+                    </div>
+                  </div>
+                </div>
+              ` : html`<div style="color:var(--text-muted)">Loading payload...</div>`}
+            </div>
+          `}
+        </div>
+      `;
+    }
+
     function App() {
       const [logs, setLogs] = useState([]);
       const [status, setStatus] = useState('connecting');
-      const [activeTab, setActiveTab] = useState('ongoing');
-      const [viewMode, setViewMode] = useState('interleaved'); // 'interleaved', 'bot', 'user', 'tools'
-      const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'success', 'error'
+      const [activeTab, setActiveTab] = useState('ongoing'); // 'ongoing', 'beads', 'frames'
+      const [viewMode, setViewMode] = useState('interleaved');
+      const [statusFilter, setStatusFilter] = useState('all');
       const [searchQuery, setSearchQuery] = useState('');
       const [maxRecords, setMaxRecords] = useState(250);
 
-      useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token') || '';
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token') || '';
 
+      useEffect(() => {
         const eventSource = new EventSource(`/api/tail/llm_calls?token=${encodeURIComponent(token)}`);
 
         eventSource.onopen = () => setStatus('connected');
-
         eventSource.onmessage = (e) => {
           try {
             const data = JSON.parse(e.data);
@@ -523,25 +730,19 @@
             console.error("Parse error:", err);
           }
         };
-
-        eventSource.onerror = (err) => {
-          setStatus('disconnected');
-        };
+        eventSource.onerror = () => setStatus('disconnected');
 
         return () => eventSource.close();
-      }, [maxRecords]);
+      }, [maxRecords, token]);
 
       const filteredLogs = useMemo(() => {
         return logs.filter(log => {
-          // Status filter
           if (statusFilter === 'error' && log.status !== 'error' && !log.error_message) return false;
           if (statusFilter === 'success' && log.status !== 'success') return false;
 
-          // Text search query
           if (!searchQuery.trim()) return true;
           const q = searchQuery.toLowerCase();
 
-          // Explicit field matching
           const modelMatch = (log.model || '').toLowerCase().includes(q);
           const statusMatch = (log.status || '').toLowerCase().includes(q);
           const seqMatch = (log.sequence_id || '').toLowerCase().includes(q);
@@ -569,13 +770,7 @@
                 Ongoing Log
               </div>
               <div class="top-nav-item ${activeTab === 'beads' ? 'active' : ''}" onClick=${() => setActiveTab('beads')}>
-                Beads Thread View <span style="font-size:0.7rem; color:var(--text-muted)">(Phase 3)</span>
-              </div>
-              <div class="top-nav-item ${activeTab === 'frames' ? 'active' : ''}" onClick=${() => setActiveTab('frames')}>
-                Topic Frames <span style="font-size:0.7rem; color:var(--text-muted)">(Phase 2)</span>
-              </div>
-              <div class="top-nav-item ${activeTab === 'memory' ? 'active' : ''}" onClick=${() => setActiveTab('memory')}>
-                Memory Layers <span style="font-size:0.7rem; color:var(--text-muted)">(Phase 2)</span>
+                Beads Thread View
               </div>
             </nav>
 
@@ -586,84 +781,88 @@
           </header>
           
           <main>
-            <div class="sidebar">
-              <div>
-                <div class="sidebar-section-title">View Slices</div>
-                <div class="filter-group">
-                  <button class="filter-btn ${viewMode === 'interleaved' ? 'active' : ''}" onClick=${() => setViewMode('interleaved')}>
-                    <span>Interleaved (Both)</span>
-                  </button>
-                  <button class="filter-btn ${viewMode === 'bot' ? 'active' : ''}" onClick=${() => setViewMode('bot')}>
-                    <span>Bot Responses</span>
-                  </button>
-                  <button class="filter-btn ${viewMode === 'user' ? 'active' : ''}" onClick=${() => setViewMode('user')}>
-                    <span>User Inputs</span>
-                  </button>
-                  <button class="filter-btn ${viewMode === 'tools' ? 'active' : ''}" onClick=${() => setViewMode('tools')}>
-                    <span>Tool Calls</span>
-                  </button>
+            ${activeTab === 'ongoing' && html`
+              <div class="sidebar">
+                <div>
+                  <div class="sidebar-section-title">View Slices</div>
+                  <div class="filter-group">
+                    <button class="filter-btn ${viewMode === 'interleaved' ? 'active' : ''}" onClick=${() => setViewMode('interleaved')}>
+                      <span>Interleaved (Both)</span>
+                    </button>
+                    <button class="filter-btn ${viewMode === 'bot' ? 'active' : ''}" onClick=${() => setViewMode('bot')}>
+                      <span>Bot Responses</span>
+                    </button>
+                    <button class="filter-btn ${viewMode === 'user' ? 'active' : ''}" onClick=${() => setViewMode('user')}>
+                      <span>User Inputs</span>
+                    </button>
+                    <button class="filter-btn ${viewMode === 'tools' ? 'active' : ''}" onClick=${() => setViewMode('tools')}>
+                      <span>Tool Calls</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="sidebar-section-title">Execution Status</div>
+                  <div class="filter-group">
+                    <button class="filter-btn ${statusFilter === 'all' ? 'active' : ''}" onClick=${() => setStatusFilter('all')}>
+                      <span>All Statuses</span>
+                    </button>
+                    <button class="filter-btn ${statusFilter === 'success' ? 'active' : ''}" onClick=${() => setStatusFilter('success')}>
+                      <span>Success Only</span>
+                    </button>
+                    <button class="filter-btn ${statusFilter === 'error' ? 'active-error' : ''}" onClick=${() => setStatusFilter('error')}>
+                      <span>Errors Only</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="sidebar-section-title">Search Filter</div>
+                  <input 
+                    type="text" 
+                    class="search-input" 
+                    placeholder="Filter text, model, ID..." 
+                    value=${searchQuery} 
+                    onInput=${e => setSearchQuery(e.target.value)} 
+                  />
+                  <div class="search-hint">
+                    Searches prompt text, model output, reasoning, sequence IDs, model names, and error messages.
+                  </div>
+                </div>
+
+                <div>
+                  <div class="sidebar-section-title">Max Buffer</div>
+                  <select 
+                    class="search-input" 
+                    value=${maxRecords} 
+                    onChange=${e => setMaxRecords(Number(e.target.value))}
+                  >
+                    <option value="100">100 Records</option>
+                    <option value="250">250 Records</option>
+                    <option value="500">500 Records</option>
+                    <option value="1000">1000 Records</option>
+                  </select>
                 </div>
               </div>
-
-              <div>
-                <div class="sidebar-section-title">Execution Status</div>
-                <div class="filter-group">
-                  <button class="filter-btn ${statusFilter === 'all' ? 'active' : ''}" onClick=${() => setStatusFilter('all')}>
-                    <span>All Statuses</span>
-                  </button>
-                  <button class="filter-btn ${statusFilter === 'success' ? 'active' : ''}" onClick=${() => setStatusFilter('success')}>
-                    <span>Success Only</span>
-                  </button>
-                  <button class="filter-btn ${statusFilter === 'error' ? 'active-error' : ''}" onClick=${() => setStatusFilter('error')}>
-                    <span>Errors Only</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="sidebar-section-title">Search Filter</div>
-                <input 
-                  type="text" 
-                  class="search-input" 
-                  placeholder="Filter text, model, ID..." 
-                  value=${searchQuery} 
-                  onInput=${e => setSearchQuery(e.target.value)} 
-                />
-                <div class="search-hint">
-                  Searches prompt text, model output, reasoning, sequence IDs, model names, and error messages.
-                </div>
-              </div>
-
-              <div>
-                <div class="sidebar-section-title">Max Buffer</div>
-                <select 
-                  class="search-input" 
-                  value=${maxRecords} 
-                  onChange=${e => setMaxRecords(Number(e.target.value))}
-                >
-                  <option value="100">100 Records</option>
-                  <option value="250">250 Records</option>
-                  <option value="500">500 Records</option>
-                  <option value="1000">1000 Records</option>
-                </select>
-              </div>
-            </div>
+            `}
 
             <div class="content-area">
-              <div class="log-stream">
-                ${filteredLogs.length === 0 ? html`
-                  <div style="text-align:center; padding:60px; color:var(--text-muted)">
-                    <div style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:8px;">No matching records found</div>
-                    <div style="font-size:0.85rem; max-width:400px; margin:0 auto; line-height:1.5;">
-                      No logs matched your active filters 
-                      ${searchQuery ? html` for query <code style="color:var(--accent-cyan)">"${searchQuery}"</code>` : ''} 
-                      ${statusFilter !== 'all' ? html` with status <code style="color:var(--accent-amber)">"${statusFilter}"</code>` : ''}.
+              ${activeTab === 'ongoing' ? html`
+                <div class="log-stream">
+                  ${filteredLogs.length === 0 ? html`
+                    <div style="text-align:center; padding:60px; color:var(--text-muted)">
+                      <div style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:8px;">No matching records found</div>
+                      <div style="font-size:0.85rem; max-width:400px; margin:0 auto; line-height:1.5;">
+                        No logs matched your active filters.
+                      </div>
                     </div>
-                  </div>
-                ` : filteredLogs.map((log, idx) => html`
-                  <${LogCard} key=${log.id || idx} log=${log} viewMode=${viewMode} />
-                `)}
-              </div>
+                  ` : filteredLogs.map((log, idx) => html`
+                    <${LogCard} key=${log.id || idx} log=${log} viewMode=${viewMode} />
+                  `)}
+                </div>
+              ` : html`
+                <${BeadsView} token=${token} />
+              `}
             </div>
           </main>
         </div>

@@ -2,6 +2,7 @@ require "http/server"
 require "option_parser"
 require "random/secure"
 require "uri"
+require "json"
 
 module Scope
   VERSION = "0.1.0"
@@ -56,7 +57,7 @@ module Scope
         req = context.request
         res = context.response
 
-        # 1. Security Check: Validate Host header (allow localhost or 127.0.0.1)
+        # 1. Security Check: Validate Host header
         host_header = req.headers["Host"]? || ""
         host_name = host_header.split(":").first
         unless host_name == "127.0.0.1" || host_name == "localhost" || @bind_all
@@ -65,14 +66,13 @@ module Scope
           next
         end
 
-        # 2. Security Check: Validate Token (query param or X-Scope-Token header)
+        # 2. Security Check: Validate Token
         uri = URI.parse(req.resource)
         params = HTTP::Params.parse(uri.query || "")
         provided_token = params["token"]? || req.headers["X-Scope-Token"]?
 
-        # Serve static assets or check token
+        # Serve static asset or check token
         if uri.path == "/"
-          # Auto-inject token into redirect if accessing / without token
           if provided_token != @token
             res.status_code = 302
             res.headers["Location"] = "/?token=#{@token}"
@@ -84,21 +84,28 @@ module Scope
           next
         end
 
-        # Require token for API calls
         if provided_token != @token
           res.status_code = 403
           res.print "403 Forbidden: Invalid or missing token"
           next
         end
 
-        # 3. Handle SSE endpoint for tailing llm_calls
-        if uri.path == "/api/tail/llm_calls"
-          handle_sse_tail(context, "llm_calls.jsonl")
-          next
+        # 3. API Routing
+        case uri.path
+        when "/api/views"
+          handle_api_views(context)
+        when "/api/thread"
+          handle_api_thread(context)
+        when .starts_with?("/api/tail/")
+          view_name = uri.path[10..-1]
+          handle_sse_tail(context, view_name)
+        when .starts_with?("/api/node/")
+          node_id = uri.path[10..-1]
+          handle_api_node(context, node_id)
+        else
+          res.status_code = 404
+          res.print "404 Not Found"
         end
-
-        res.status_code = 404
-        res.print "404 Not Found"
       end
 
       server.bind_tcp(@host, @port)
@@ -112,13 +119,109 @@ module Scope
       server.listen
     end
 
-    private def handle_sse_tail(context, filename : String)
+    private def handle_api_views(context)
+      res = context.response
+      res.headers["Content-Type"] = "application/json"
+
+      views = [] of Hash(String, String)
+      
+      add_view_if_exists(views, "llm_calls", "llm_calls.jsonl", "LLM Calls Stream", "stream")
+      add_view_if_exists(views, "app_log", "logs/empaws.log", "Empaws App Log", "stream")
+      add_view_if_exists(views, "running_log", "logs/running_log.txt", "Running Log", "stream")
+
+      frames_dir = File.join(@dir, "frames")
+      if Dir.exists?(frames_dir)
+        Dir.glob(File.join(frames_dir, "*.json")).each do |f|
+          name = File.basename(f)
+          views << {"id" => "frame:#{name}", "filename" => f, "label" => "Frame: #{name}", "type" => "static"}
+        end
+      end
+
+      res.print views.to_json
+    end
+
+    private def add_view_if_exists(views, id, rel_path, label, type)
+      full = File.join(@dir, rel_path)
+      if File.exists?(full)
+        views << {"id" => id, "filename" => rel_path, "label" => label, "type" => type}
+      end
+    end
+
+    private def handle_api_thread(context)
+      res = context.response
+      res.headers["Content-Type"] = "application/json"
+
+      nodes_summary = [] of Hash(String, JSON::Any)
+
+      context_files = Dir.glob(File.join(@dir, "context", "*.json"))
+      context_files.concat(Dir.glob(File.join(@dir, "*.json")))
+
+      context_files.each do |cfile|
+        begin
+          json_text = File.read(cfile)
+          parsed = JSON.parse(json_text)
+          if parsed_nodes = parsed["nodes"]?
+            parsed_nodes.as_h.each do |id, node|
+              msg = node["message"]?
+              role = msg ? (msg["role"]?.try(&.to_s) || "unknown") : "unknown"
+              turn_id = node["turn_id"]?.try(&.to_s)
+              token_count = node["token_count"]? ? node["token_count"].to_s.to_i? || 0 : 0
+              parent_id = node["parent_id"]?.try(&.to_s)
+              subsumes = node["subsumes"]? ? node["subsumes"].as_a.map(&.to_s) : [] of String
+              has_tools = msg && msg["tool_calls"]? && !msg["tool_calls"].as_a.empty?
+
+              summary = {
+                "id" => JSON::Any.new(id),
+                "role" => JSON::Any.new(role),
+                "parent_id" => parent_id ? JSON::Any.new(parent_id) : JSON::Any.new(nil),
+                "turn_id" => turn_id ? JSON::Any.new(turn_id) : JSON::Any.new(nil),
+                "token_count" => JSON::Any.new(token_count.to_i64),
+                "subsumes" => JSON::Any.new(subsumes.map { |s| JSON::Any.new(s) }),
+                "has_tools" => JSON::Any.new(has_tools || false)
+              }
+              nodes_summary << summary
+            end
+          end
+        rescue ex
+        end
+      end
+
+      res.print nodes_summary.to_json
+    end
+
+    private def handle_api_node(context, node_id : String)
+      res = context.response
+      res.headers["Content-Type"] = "application/json"
+
+      context_files = Dir.glob(File.join(@dir, "context", "*.json"))
+      context_files.concat(Dir.glob(File.join(@dir, "*.json")))
+
+      context_files.each do |cfile|
+        begin
+          json_text = File.read(cfile)
+          parsed = JSON.parse(json_text)
+          if parsed_nodes = parsed["nodes"]?
+            if target_node = parsed_nodes.as_h[node_id]?
+              res.print target_node.to_json
+              return
+            end
+          end
+        rescue ex
+        end
+      end
+
+      res.status_code = 404
+      res.print({"error" => "Node #{node_id} not found"}.to_json)
+    end
+
+    private def handle_sse_tail(context, view_name : String)
       res = context.response
       res.headers["Content-Type"] = "text/event-stream"
       res.headers["Cache-Control"] = "no-cache"
       res.headers["Connection"] = "keep-alive"
       res.headers["Access-Control-Allow-Origin"] = "*"
 
+      filename = view_name == "llm_calls" ? "llm_calls.jsonl" : view_name
       target_file = File.join(@dir, filename)
       unless File.exists?(target_file)
         alt_file = File.join(@dir, "logs", filename)
@@ -171,7 +274,6 @@ module Scope
             end
           end
         rescue ex
-          # Ignore transient errors during live file writes
         end
 
         sleep 0.5.seconds
