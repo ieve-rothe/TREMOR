@@ -501,9 +501,16 @@
       const systemText = systemMsgs.map(m => m.content).join("\n\n");
       const systemTokens = estimateTokens(systemText);
 
-      const nonSystemMsgs = promptMsgs.filter(m => m.role !== 'system');
-      const latestUserMsg = nonSystemMsgs.length > 0 ? nonSystemMsgs[nonSystemMsgs.length - 1] : null;
-      const historyMsgs = nonSystemMsgs.length > 1 ? nonSystemMsgs.slice(0, nonSystemMsgs.length - 1) : [];
+      // Separate tool result return messages from human user inputs & assistant history
+      const toolResultMsgs = promptMsgs.filter(m => m.role === 'tool');
+      const conversationMsgs = promptMsgs.filter(m => m.role === 'user' || m.role === 'assistant');
+
+      const userMsgs = conversationMsgs.filter(m => m.role === 'user');
+      const latestUserMsg = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1] : null;
+
+      // History contains all conversationMsgs prior to latestUserMsg
+      const latestUserIdx = latestUserMsg ? conversationMsgs.lastIndexOf(latestUserMsg) : -1;
+      const historyMsgs = latestUserIdx > 0 ? conversationMsgs.slice(0, latestUserIdx) : (latestUserMsg ? [] : conversationMsgs);
       const historyText = historyMsgs.map(m => m.content).join("\n\n");
       const historyTokens = estimateTokens(historyText);
 
@@ -569,6 +576,19 @@
                 </div>
               `)}
             </div>
+          `}
+
+          ${renderTools && toolResultMsgs.length > 0 && html`
+            ${toolResultMsgs.map((m, idx) => html`
+              <div key=${idx}>
+                <div style="font-size:0.75rem; color:var(--accent-amber); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">
+                  🔧 TOOL RESULT RETURNED ${m.tool_call_id ? `(ID: ${m.tool_call_id})` : ''} (~${estimateTokens(m.content)} tokens)
+                </div>
+                <div class="message-bubble role-tool">
+                  ${m.content}
+                </div>
+              </div>
+            `)}
           `}
 
           ${renderUser && latestUserMsg && html`
@@ -926,7 +946,7 @@
           if (statusFilter === 'success' && log.status !== 'success') return false;
 
           if (viewMode === 'tools') {
-            const hasToolCalls = log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0;
+            const hasToolCalls = (log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0) || (log.prompt || []).some(m => m.role === 'tool');
             if (!hasToolCalls) return false;
           }
           if (viewMode === 'user') {
