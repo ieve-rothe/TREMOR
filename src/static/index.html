@@ -191,11 +191,17 @@
       border-color: var(--accent-rose);
     }
 
+    .search-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
     .search-input {
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--panel-border);
       color: var(--text-main);
-      padding: 8px 12px;
+      padding: 8px 30px 8px 12px;
       border-radius: 6px;
       font-size: 0.85rem;
       outline: none;
@@ -205,6 +211,26 @@
 
     .search-input:focus {
       border-color: var(--accent-cyan);
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 10px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px;
+      border-radius: 50%;
+      transition: color 0.15s ease;
+    }
+
+    .search-clear-btn:hover {
+      color: var(--text-main);
     }
 
     .search-hint {
@@ -730,11 +756,9 @@
 
       const filteredLogs = useMemo(() => {
         return logs.filter(log => {
-          // Status filter
           if (statusFilter === 'error' && log.status !== 'error' && !log.error_message) return false;
           if (statusFilter === 'success' && log.status !== 'success') return false;
 
-          // Slice Filters
           if (viewMode === 'tools') {
             const hasToolCalls = log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0;
             if (!hasToolCalls) return false;
@@ -826,13 +850,24 @@
 
                 <div>
                   <div class="sidebar-section-title">Search Filter</div>
-                  <input 
-                    type="text" 
-                    class="search-input" 
-                    placeholder="Filter text, model, ID..." 
-                    value=${searchQuery} 
-                    onInput=${e => setSearchQuery(e.target.value)} 
-                  />
+                  <div class="search-wrapper">
+                    <input 
+                      type="text" 
+                      class="search-input" 
+                      placeholder="Filter text, model, ID..." 
+                      value=${searchQuery} 
+                      onInput=${e => setSearchQuery(e.target.value)} 
+                    />
+                    ${searchQuery && html`
+                      <button 
+                        class="search-clear-btn" 
+                        title="Clear search filter"
+                        onClick=${() => setSearchQuery('')}
+                      >
+                        ✕
+                      </button>
+                    `}
+                  </div>
                   <div class="search-hint">
                     Searches prompt text, model output, reasoning, sequence IDs, model names, and error messages.
                   </div>
