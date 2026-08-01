@@ -1,12 +1,12 @@
-name: scope
+name: tremor
 version: 0.1.0
 
 authors:
   - ieve <ievemail@proton.me>
 
 targets:
-  scope:
-    main: src/scope.cr
+  tremor:
+    main: src/tremor.cr
 
 crystal: '>= 1.18.2'
 
