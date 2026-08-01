@@ -493,13 +493,19 @@
 
     function LogCard({ log, viewMode }) {
       const [showSystem, setShowSystem] = useState(false);
+      const [showHistory, setShowHistory] = useState(false);
       const [showThinking, setShowThinking] = useState(false);
 
       const promptMsgs = log.prompt || [];
-      const userMsgs = promptMsgs.filter(m => m.role === 'user');
       const systemMsgs = promptMsgs.filter(m => m.role === 'system');
       const systemText = systemMsgs.map(m => m.content).join("\n\n");
       const systemTokens = estimateTokens(systemText);
+
+      const nonSystemMsgs = promptMsgs.filter(m => m.role !== 'system');
+      const latestUserMsg = nonSystemMsgs.length > 0 ? nonSystemMsgs[nonSystemMsgs.length - 1] : null;
+      const historyMsgs = nonSystemMsgs.length > 1 ? nonSystemMsgs.slice(0, nonSystemMsgs.length - 1) : [];
+      const historyText = historyMsgs.map(m => m.content).join("\n\n");
+      const historyTokens = estimateTokens(historyText);
 
       const botOutput = log.raw_output?.content || '';
       const thinking = log.raw_output?.thinking || '';
@@ -543,14 +549,38 @@
             </div>
           `}
 
-          ${renderUser && userMsgs.map((m, idx) => html`
-            <div key=${idx}>
-              <div style="font-size:0.75rem; color:var(--user-text); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">👤 USER INPUT (~${estimateTokens(m.content)} tokens)</div>
+          ${renderUser && historyMsgs.length > 0 && html`
+            <div>
+              <div class="collapsible-header" onClick=${() => setShowHistory(!showHistory)}>
+                <span>💬 Previous Conversation Context (${historyMsgs.length} message${historyMsgs.length > 1 ? 's' : ''})</span>
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <span class="token-badge">~${historyTokens} tokens</span>
+                  <span>${showHistory ? '▼ Hide' : '▶ Expand'}</span>
+                </div>
+              </div>
+              ${showHistory && historyMsgs.map((m, idx) => html`
+                <div key=${idx} style="margin-top:8px;">
+                  <div style="font-size:0.72rem; color:var(--text-muted); font-weight:700; margin-bottom:4px; text-transform:uppercase;">
+                    ${m.role === 'user' ? '👤 USER' : m.role === 'assistant' ? '🤖 ASSISTANT' : m.role} (~${estimateTokens(m.content)} tokens)
+                  </div>
+                  <div class="message-bubble ${m.role === 'user' ? 'role-user' : 'role-assistant'}">
+                    ${m.content}
+                  </div>
+                </div>
+              `)}
+            </div>
+          `}
+
+          ${renderUser && latestUserMsg && html`
+            <div>
+              <div style="font-size:0.75rem; color:var(--user-text); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">
+                👤 ${historyMsgs.length > 0 ? 'LATEST USER INPUT' : 'USER INPUT'} (~${estimateTokens(latestUserMsg.content)} tokens)
+              </div>
               <div class="message-bubble role-user">
-                ${m.content}
+                ${latestUserMsg.content}
               </div>
             </div>
-          `)}
+          `}
 
           ${thinking && html`
             <div>
