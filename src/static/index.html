@@ -506,7 +506,7 @@
             </div>
           `}
 
-          ${renderBot && (botOutput || !thinking) && html`
+          ${renderBot && (botOutput || (!thinking && !toolCalls)) && html`
             <div>
               <div style="font-size:0.75rem; color:var(--bot-text); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">🤖 BOT RESPONSE (~${estimateTokens(botOutput)} tokens)</div>
               <div class="message-bubble role-assistant">
@@ -517,7 +517,7 @@
 
           ${renderTools && toolCalls && html`
             <div>
-              <div style="font-size:0.75rem; color:var(--accent-amber); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">🛠️ TOOL CALLS</div>
+              <div style="font-size:0.75rem; color:var(--accent-amber); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">🛠️ TOOL CALLS GENERATED</div>
               <div class="message-bubble role-tool">
                 ${JSON.stringify(toolCalls, null, 2)}
               </div>
@@ -737,8 +737,7 @@
           // Slice Filters
           if (viewMode === 'tools') {
             const hasToolCalls = log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0;
-            const hasToolPrompt = (log.prompt || []).some(m => m.role === 'tool' || m.role === 'function');
-            if (!hasToolCalls && !hasToolPrompt) return false;
+            if (!hasToolCalls) return false;
           }
           if (viewMode === 'user') {
             const hasUserMsg = (log.prompt || []).some(m => m.role === 'user');
