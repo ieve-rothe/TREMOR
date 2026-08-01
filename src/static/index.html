@@ -1017,8 +1017,22 @@
           if (statusFilter === 'success' && log.status !== 'success') return false;
 
           if (viewMode === 'tools') {
-            const hasToolCalls = (log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0) || (log.prompt || []).some(m => m.role === 'tool');
-            if (!hasToolCalls) return false;
+            const hasGeneratedTools = log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0;
+
+            // Only count tool results that arrived AFTER the latest user message (active for THIS turn)
+            const promptMsgs = log.prompt || [];
+            const conversationMsgs = promptMsgs.filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool');
+            const userMsgs = conversationMsgs.filter(m => m.role === 'user');
+            const latestUserMsg = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1] : null;
+            const latestUserIdx = latestUserMsg ? conversationMsgs.lastIndexOf(latestUserMsg) : -1;
+
+            const activeToolMsgs = latestUserIdx >= 0
+              ? conversationMsgs.slice(latestUserIdx + 1).filter(m => m.role === 'tool')
+              : promptMsgs.filter(m => m.role === 'tool');
+
+            const hasReturnedTools = activeToolMsgs.length > 0;
+
+            if (!hasGeneratedTools && !hasReturnedTools) return false;
           }
           if (viewMode === 'user') {
             const hasUserMsg = (log.prompt || []).some(m => m.role === 'user');
