@@ -888,11 +888,11 @@
                   <div><strong>Role:</strong> <span style="color:var(--accent-cyan); font-weight:700;">${nodeDetails.message?.role || nodeDetails.role}</span></div>
                   <div><strong>Tokens:</strong> ~${nodeDetails.token_count || estimateTokens(nodeDetails.message?.content || '')}</div>
                   
-                  ${nodeDetails.raw_output?.tool_calls && html`
+                  ${(nodeDetails.raw_output?.tool_calls || nodeDetails.message?.tool_calls) && html`
                     <div>
                       <strong style="color:var(--accent-amber)">🔧 Tool Calls Executed:</strong>
                       <div class="message-bubble role-tool" style="margin-top:6px;">
-                        ${JSON.stringify(nodeDetails.raw_output.tool_calls, null, 2)}
+                        ${JSON.stringify(nodeDetails.raw_output?.tool_calls || nodeDetails.message?.tool_calls, null, 2)}
                       </div>
                     </div>
                   `}
@@ -900,7 +900,11 @@
                   <div>
                     <strong style="color:var(--accent-cyan)">Content Payload:</strong>
                     <div class="message-bubble role-assistant" style="margin-top:6px;">
-                      ${nodeDetails.message?.content || nodeDetails.raw_output?.content || JSON.stringify(nodeDetails, null, 2)}
+                      ${(nodeDetails.message?.content != null && nodeDetails.message.content !== '')
+                        ? nodeDetails.message.content
+                        : (nodeDetails.raw_output?.content != null && nodeDetails.raw_output.content !== '')
+                          ? nodeDetails.raw_output.content
+                          : html`<span style="color:var(--text-muted); font-style:italic;">(No text content — tool-only turn)</span>`}
                     </div>
                   </div>
                 </div>

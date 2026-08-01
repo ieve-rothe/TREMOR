@@ -16,8 +16,17 @@ module Tremor
 
     INDEX_HTML = {{ read_file("#{__DIR__}/static/index.html") }}
 
+    private def expand_dir(path : String) : String
+      if path.starts_with?("~")
+        home = ENV["HOME"]? || "/home/cam"
+        File.expand_path(path.sub(/^~/, home))
+      else
+        File.expand_path(path)
+      end
+    end
+
     def initialize
-      @dir = File.expand_path("~/repos/adjutant/empaws")
+      @dir = expand_dir("~/repos/adjutant/empaws")
       @port = 8080
       @host = "127.0.0.1"
       @bind_all = false
@@ -29,7 +38,7 @@ module Tremor
         parser.banner = "Usage: tremor [options]"
 
         parser.on("-d DIR", "--dir=DIR", "Target EMPAWS base directory to monitor") do |d|
-          @dir = File.expand_path(d)
+          @dir = expand_dir(d)
         end
 
         parser.on("-p PORT", "--port=PORT", "Port to listen on (default: 8080)") do |p|
@@ -49,6 +58,8 @@ module Tremor
     end
 
     def run
+      @dir = expand_dir(@dir)
+
       # Auto-detect local data directory if present in target base directory
       empaws_local = File.join(@dir, ".empaws_local")
       sandbox_local = File.join(@dir, "sandbox", "local")
@@ -128,6 +139,15 @@ module Tremor
       server.listen
     end
 
+    private def find_target_file(filename : String) : String?
+      candidates = [
+        File.join(@dir, filename),
+        File.join(@dir, "logs", filename),
+        File.join(File.dirname(@dir), filename)
+      ]
+      candidates.find { |path| File.exists?(path) }
+    end
+
     private def handle_api_views(context)
       res = context.response
       res.headers["Content-Type"] = "application/json"
@@ -150,8 +170,8 @@ module Tremor
     end
 
     private def add_view_if_exists(views, id, rel_path, label, type)
-      full = File.join(@dir, rel_path)
-      if File.exists?(full)
+      full = find_target_file(rel_path)
+      if full
         views << {"id" => id, "filename" => rel_path, "label" => label, "type" => type}
       end
     end
@@ -162,8 +182,11 @@ module Tremor
 
       nodes_summary = [] of Hash(String, JSON::Any)
       seen_ids = Set(String).new
+      seen_sequence_ids = Set(String).new
 
       # 1. Active DAG Context Nodes
+      # First pass: collect all nodes and build parent chains to derive sequence groups
+      all_dag_nodes = [] of {String, JSON::Any}  # {id, node_json}
       context_files = Dir.glob(File.join(@dir, "context", "*.json"))
       context_files.concat(Dir.glob(File.join(@dir, "*.json")))
 
@@ -175,44 +198,79 @@ module Tremor
             parsed_nodes.as_h.each do |id, node|
               next if seen_ids.includes?(id)
               seen_ids.add(id)
-
-              msg = node["message"]?
-              role = msg ? (msg["role"]?.try(&.to_s) || "unknown") : "unknown"
-              turn_id = node["turn_id"]?.try(&.to_s)
-              token_count = node["token_count"]? ? node["token_count"].to_s.to_i? || 0 : 0
-              parent_id = node["parent_id"]?.try(&.to_s)
-              subsumes = node["subsumes"]? ? node["subsumes"].as_a.map(&.to_s) : [] of String
-              has_tools = msg && msg["tool_calls"]? && !msg["tool_calls"].as_a.empty?
-
-              summary = {
-                "id" => JSON::Any.new(id),
-                "role" => JSON::Any.new(role),
-                "parent_id" => parent_id ? JSON::Any.new(parent_id) : JSON::Any.new(nil),
-                "turn_id" => turn_id ? JSON::Any.new(turn_id) : JSON::Any.new(nil),
-                "sequence_id" => turn_id ? JSON::Any.new(turn_id) : JSON::Any.new(nil),
-                "token_count" => JSON::Any.new(token_count.to_i64),
-                "subsumes" => JSON::Any.new(subsumes.map { |s| JSON::Any.new(s) }),
-                "has_tools" => JSON::Any.new(has_tools || false)
-              }
-              nodes_summary << summary
+              all_dag_nodes << {id, node}
             end
           end
         rescue ex
         end
       end
 
-      # 2. Historical Calls from llm_calls.jsonl
-      llm_calls_file = File.join(@dir, "llm_calls.jsonl")
-      if File.exists?(llm_calls_file)
+      # Build parent_id lookup and derive sequence groups from root chains
+      parent_map = {} of String => String?
+      all_dag_nodes.each do |(id, node)|
+        parent_map[id] = node["parent_id"]?.try(&.to_s)
+      end
+
+      # Find the root of each node's chain
+      node_to_root = {} of String => String
+      all_dag_nodes.each do |(id, _)|
+        current = id
+        while parent = parent_map[current]?
+          current = parent
+        end
+        node_to_root[id] = current
+      end
+
+      all_dag_nodes.each do |(id, node)|
+        msg = node["message"]?
+        role = msg ? (msg["role"]?.try(&.to_s) || "unknown") : "unknown"
+        turn_id = node["turn_id"]?.try(&.to_s)
+        token_count = node["token_count"]? ? node["token_count"].to_s.to_i? || 0 : 0
+        parent_id = node["parent_id"]?.try(&.to_s)
+        subsumes = node["subsumes"]? ? node["subsumes"].as_a.map(&.to_s) : [] of String
+        has_tools = msg && msg["tool_calls"]? && !msg["tool_calls"].as_a.empty?
+
+        # Use turn_id if set, otherwise derive from root chain
+        seq_id = turn_id || node_to_root[id]?
+
+        summary = {
+          "id" => JSON::Any.new(id),
+          "role" => JSON::Any.new(role),
+          "parent_id" => parent_id ? JSON::Any.new(parent_id) : JSON::Any.new(nil),
+          "turn_id" => turn_id ? JSON::Any.new(turn_id) : JSON::Any.new(nil),
+          "sequence_id" => seq_id ? JSON::Any.new(seq_id) : JSON::Any.new(nil),
+          "token_count" => JSON::Any.new(token_count.to_i64),
+          "subsumes" => JSON::Any.new(subsumes.map { |s| JSON::Any.new(s) }),
+          "has_tools" => JSON::Any.new(has_tools || false)
+        }
+        nodes_summary << summary
+      end
+
+      # Collect all sequence IDs from context nodes so we can skip duplicates from llm_calls
+      nodes_summary.each do |ns|
+        if sid = ns["sequence_id"]?
+          if sid_str = sid.as_s?
+            seen_sequence_ids.add(sid_str)
+          end
+        end
+      end
+
+      # 2. Historical Calls from llm_calls.jsonl — skip entries whose sequence_id is already covered
+      llm_calls_file = find_target_file("llm_calls.jsonl")
+      if llm_calls_file && File.exists?(llm_calls_file)
         begin
           File.each_line(llm_calls_file) do |line|
             next if line.strip.empty?
             parsed = JSON.parse(line)
             id = parsed["id"]?.try(&.to_s) || Random::Secure.hex(8)
             next if seen_ids.includes?(id)
-            seen_ids.add(id)
 
             seq_id = parsed["sequence_id"]?.try(&.to_s)
+            # Skip this llm_calls entry if context DAG already has nodes for this sequence
+            next if seq_id && seen_sequence_ids.includes?(seq_id)
+
+            seen_ids.add(id)
+
             raw_out = parsed["raw_output"]?
             has_tools = false
             if raw_out && raw_out["tool_calls"]? && !raw_out["tool_calls"].as_a.empty?
@@ -265,8 +323,8 @@ module Tremor
       end
 
       # 2. Search in llm_calls.jsonl
-      llm_calls_file = File.join(@dir, "llm_calls.jsonl")
-      if File.exists?(llm_calls_file)
+      llm_calls_file = find_target_file("llm_calls.jsonl")
+      if llm_calls_file && File.exists?(llm_calls_file)
         begin
           File.each_line(llm_calls_file) do |line|
             next if line.strip.empty?
@@ -292,10 +350,12 @@ module Tremor
       res.headers["Access-Control-Allow-Origin"] = "*"
 
       filename = view_name == "llm_calls" ? "llm_calls.jsonl" : view_name
-      target_file = File.join(@dir, filename)
-      unless File.exists?(target_file)
-        alt_file = File.join(@dir, "logs", filename)
-        target_file = alt_file if File.exists?(alt_file)
+      target_file = find_target_file(filename)
+
+      unless target_file && File.exists?(target_file)
+        res.status_code = 404
+        res.print "event: error\ndata: File #{filename} not found\n\n"
+        return
       end
 
       req = context.request
