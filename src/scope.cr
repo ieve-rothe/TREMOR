@@ -152,7 +152,9 @@ module Scope
       res.headers["Content-Type"] = "application/json"
 
       nodes_summary = [] of Hash(String, JSON::Any)
+      seen_ids = Set(String).new
 
+      # 1. Active DAG Context Nodes
       context_files = Dir.glob(File.join(@dir, "context", "*.json"))
       context_files.concat(Dir.glob(File.join(@dir, "*.json")))
 
@@ -162,6 +164,9 @@ module Scope
           parsed = JSON.parse(json_text)
           if parsed_nodes = parsed["nodes"]?
             parsed_nodes.as_h.each do |id, node|
+              next if seen_ids.includes?(id)
+              seen_ids.add(id)
+
               msg = node["message"]?
               role = msg ? (msg["role"]?.try(&.to_s) || "unknown") : "unknown"
               turn_id = node["turn_id"]?.try(&.to_s)
@@ -175,12 +180,51 @@ module Scope
                 "role" => JSON::Any.new(role),
                 "parent_id" => parent_id ? JSON::Any.new(parent_id) : JSON::Any.new(nil),
                 "turn_id" => turn_id ? JSON::Any.new(turn_id) : JSON::Any.new(nil),
+                "sequence_id" => turn_id ? JSON::Any.new(turn_id) : JSON::Any.new(nil),
                 "token_count" => JSON::Any.new(token_count.to_i64),
                 "subsumes" => JSON::Any.new(subsumes.map { |s| JSON::Any.new(s) }),
                 "has_tools" => JSON::Any.new(has_tools || false)
               }
               nodes_summary << summary
             end
+          end
+        rescue ex
+        end
+      end
+
+      # 2. Historical Calls from llm_calls.jsonl
+      llm_calls_file = File.join(@dir, "llm_calls.jsonl")
+      if File.exists?(llm_calls_file)
+        begin
+          File.each_line(llm_calls_file) do |line|
+            next if line.strip.empty?
+            parsed = JSON.parse(line)
+            id = parsed["id"]?.try(&.to_s) || Random::Secure.hex(8)
+            next if seen_ids.includes?(id)
+            seen_ids.add(id)
+
+            seq_id = parsed["sequence_id"]?.try(&.to_s)
+            raw_out = parsed["raw_output"]?
+            has_tools = false
+            if raw_out && raw_out["tool_calls"]? && !raw_out["tool_calls"].as_a.empty?
+              has_tools = true
+            end
+
+            content_text = raw_out ? (raw_out["content"]?.try(&.to_s) || "") : ""
+            tokens = (content_text.bytesize / 4).to_i64
+
+            role = has_tools ? "tool" : "assistant"
+            summary = {
+              "id" => JSON::Any.new(id),
+              "role" => JSON::Any.new(role),
+              "parent_id" => JSON::Any.new(nil),
+              "turn_id" => seq_id ? JSON::Any.new(seq_id) : JSON::Any.new(nil),
+              "sequence_id" => seq_id ? JSON::Any.new(seq_id) : JSON::Any.new(nil),
+              "token_count" => JSON::Any.new(tokens),
+              "subsumes" => JSON::Any.new([] of JSON::Any),
+              "has_tools" => JSON::Any.new(has_tools)
+            }
+            nodes_summary << summary
           end
         rescue ex
         end
@@ -193,6 +237,7 @@ module Scope
       res = context.response
       res.headers["Content-Type"] = "application/json"
 
+      # 1. Search in DAG context files
       context_files = Dir.glob(File.join(@dir, "context", "*.json"))
       context_files.concat(Dir.glob(File.join(@dir, "*.json")))
 
@@ -203,6 +248,22 @@ module Scope
           if parsed_nodes = parsed["nodes"]?
             if target_node = parsed_nodes.as_h[node_id]?
               res.print target_node.to_json
+              return
+            end
+          end
+        rescue ex
+        end
+      end
+
+      # 2. Search in llm_calls.jsonl
+      llm_calls_file = File.join(@dir, "llm_calls.jsonl")
+      if File.exists?(llm_calls_file)
+        begin
+          File.each_line(llm_calls_file) do |line|
+            next if line.strip.empty?
+            parsed = JSON.parse(line)
+            if parsed["id"]?.try(&.to_s) == node_id
+              res.print parsed.to_json
               return
             end
           end
