@@ -104,6 +104,21 @@ module Tremor
           next
         end
 
+        # Serve static files (JS, CSS, etc.) from src/static without token
+        if uri.path.ends_with?(".js") || uri.path.ends_with?(".css") || uri.path.starts_with?("/_ds/")
+          static_path = File.join(__DIR__, "static", uri.path)
+          if File.exists?(static_path) && !File.directory?(static_path)
+            content = File.read(static_path)
+            res.headers["Content-Type"] = case
+              when uri.path.ends_with?(".js") then "application/javascript"
+              when uri.path.ends_with?(".css") then "text/css"
+              else "application/octet-stream"
+            end
+            res.print content
+            next
+          end
+        end
+
         if provided_token != @token
           res.status_code = 403
           res.print "403 Forbidden: Invalid or missing token"
