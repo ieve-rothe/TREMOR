@@ -366,7 +366,6 @@
       flex-wrap: wrap;
     }
 
-    /* Beads SVG Container & Drawer */
     .beads-container {
       flex: 1;
       display: flex;
@@ -507,11 +506,11 @@
             </div>
           `}
 
-          ${renderBot && botOutput && html`
+          ${renderBot && (botOutput || !thinking) && html`
             <div>
               <div style="font-size:0.75rem; color:var(--bot-text); font-weight:800; margin-bottom:6px; letter-spacing:0.5px;">🤖 BOT RESPONSE (~${estimateTokens(botOutput)} tokens)</div>
               <div class="message-bubble role-assistant">
-                ${botOutput}
+                ${botOutput ? botOutput : html`<span style="color:var(--text-muted); font-style:italic;">(No text content in response)</span>`}
               </div>
             </div>
           `}
@@ -534,7 +533,6 @@
       `;
     }
 
-    // Hand-Rolled SVG Beads View Component
     function BeadsView({ token }) {
       const [nodes, setNodes] = useState([]);
       const [selectedNode, setSelectedNode] = useState(null);
@@ -567,12 +565,10 @@
         return html`<div style="padding:40px; color:var(--text-muted); text-align:center;">No context node graph found in EMPAWS directory.</div>`;
       }
 
-      // Hand-Rolled Linear Spine + Branch Layout Algorithm
       const nodeCoords = {};
       const nodeIndexMap = {};
       nodes.forEach((n, idx) => { nodeIndexMap[n.id] = idx; });
 
-      // Layout: main spine along Y=120, offset branches at Y=50 or Y=190
       let spineX = 60;
       const layoutNodes = nodes.map((node, i) => {
         const isBranch = node.parent_id && nodeIndexMap[node.parent_id] !== undefined && nodeIndexMap[node.parent_id] < i - 1;
@@ -601,7 +597,6 @@
                 </marker>
               </defs>
 
-              <!-- Parent to Child Connectors -->
               ${layoutNodes.map(node => {
                 if (!node.parent_id || !nodeCoords[node.parent_id]) return null;
                 const parent = nodeCoords[node.parent_id];
@@ -617,7 +612,6 @@
                 `;
               })}
 
-              <!-- Subsumed Fan Lines -->
               ${layoutNodes.map(node => {
                 if (!node.subsumes || node.subsumes.length === 0) return null;
                 return node.subsumes.map(subId => {
@@ -635,12 +629,11 @@
                 });
               })}
 
-              <!-- Bead Nodes -->
               ${layoutNodes.map(node => {
                 const isSelected = selectedNode === node.id;
                 const isSquish = node.subsumes && node.subsumes.length > 0;
                 
-                let fillColor = "#94a3b8"; // system
+                let fillColor = "#94a3b8";
                 if (node.role === "user") fillColor = "#f43f5e";
                 if (node.role === "assistant") fillColor = "#38bdf8";
                 if (isSquish) fillColor = "#fbbf24";
@@ -709,7 +702,7 @@
     function App() {
       const [logs, setLogs] = useState([]);
       const [status, setStatus] = useState('connecting');
-      const [activeTab, setActiveTab] = useState('ongoing'); // 'ongoing', 'beads', 'frames'
+      const [activeTab, setActiveTab] = useState('ongoing');
       const [viewMode, setViewMode] = useState('interleaved');
       const [statusFilter, setStatusFilter] = useState('all');
       const [searchQuery, setSearchQuery] = useState('');
@@ -737,8 +730,24 @@
 
       const filteredLogs = useMemo(() => {
         return logs.filter(log => {
+          // Status filter
           if (statusFilter === 'error' && log.status !== 'error' && !log.error_message) return false;
           if (statusFilter === 'success' && log.status !== 'success') return false;
+
+          // Slice Filters
+          if (viewMode === 'tools') {
+            const hasToolCalls = log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0;
+            const hasToolPrompt = (log.prompt || []).some(m => m.role === 'tool' || m.role === 'function');
+            if (!hasToolCalls && !hasToolPrompt) return false;
+          }
+          if (viewMode === 'user') {
+            const hasUserMsg = (log.prompt || []).some(m => m.role === 'user');
+            if (!hasUserMsg) return false;
+          }
+          if (viewMode === 'bot') {
+            const hasBotMsg = (log.raw_output?.content && log.raw_output.content.trim().length > 0) || (log.raw_output?.tool_calls && log.raw_output.tool_calls.length > 0);
+            if (!hasBotMsg) return false;
+          }
 
           if (!searchQuery.trim()) return true;
           const q = searchQuery.toLowerCase();
@@ -755,7 +764,7 @@
 
           return modelMatch || statusMatch || seqMatch || idMatch || errorMatch || promptMatch || responseMatch || thinkingMatch;
         });
-      }, [logs, searchQuery, statusFilter]);
+      }, [logs, searchQuery, statusFilter, viewMode]);
 
       return html`
         <div style="display:flex; flex-direction:column; height:100vh;">
@@ -796,7 +805,7 @@
                       <span>User Inputs</span>
                     </button>
                     <button class="filter-btn ${viewMode === 'tools' ? 'active' : ''}" onClick=${() => setViewMode('tools')}>
-                      <span>Tool Calls</span>
+                      <span>Tool Calls Only</span>
                     </button>
                   </div>
                 </div>
