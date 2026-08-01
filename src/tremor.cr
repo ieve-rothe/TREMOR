@@ -49,9 +49,12 @@ module Tremor
     end
 
     def run
-      # Auto-detect sandbox/local if present in target directory
+      # Auto-detect local data directory if present in target base directory
+      empaws_local = File.join(@dir, ".empaws_local")
       sandbox_local = File.join(@dir, "sandbox", "local")
-      if File.directory?(sandbox_local)
+      if File.directory?(empaws_local)
+        @dir = empaws_local
+      elsif File.directory?(sandbox_local)
         @dir = sandbox_local
       end
 
